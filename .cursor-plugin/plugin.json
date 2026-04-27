@@ -1,0 +1,11 @@
+{
+  "name": "oodle-agent-skills",
+  "displayName": "Oodle Skills",
+  "description": "Oodle observability platform skills for AI coding assistants",
+  "version": "1.0.0",
+  "author": { "name": "Oodle", "email": "support@oodle.ai" },
+  "homepage": "https://github.com/oodle-ai/agent-skills",
+  "repository": "https://github.com/oodle-ai/agent-skills",
+  "license": "MIT",
+  "keywords": ["oodle","observability","monitoring","alerting","metrics","traces","ai-agent","skills"]
+}
