@@ -60,6 +60,10 @@ Before running any oodle command:
 | `oodle notifiers` | Manage notification channels |
 | `oodle notification-policies` | Manage routing of alerts to notifiers |
 | `oodle muting-rules` | Silence alerts during maintenance |
+| `oodle metrics query` | Run PromQL instant query |
+| `oodle metrics query-range` | Run PromQL range query |
+| `oodle logs index-patterns` | List available log index patterns |
+| `oodle logs query` | Search logs using OpenSearch Query DSL |
 | `oodle metrics` | Query metric names, labels, label values |
 | `oodle traces` | Search and fetch traces |
 | `oodle log-metrics` | Manage log-derived metric rules |

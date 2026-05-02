@@ -1,6 +1,6 @@
 ---
 name: oodle
-description: Oodle observability platform CLI skills. Covers monitors, dashboards, alerting, metrics, traces, log metrics, synthetic monitors, and drop rules.
+description: Oodle observability platform CLI skills. Covers monitors, dashboards, alerting, metrics, traces, log metrics, synthetic monitors, drop rules, and metric/log queries.
 metadata:
   version: "1.0.0"
   author: oodle-ai
@@ -25,6 +25,8 @@ Skills for the Oodle observability platform CLI. Install with `oodle skills inst
 | oodle-traces | Trace search and span queries |
 | oodle-log-metrics | Log-based metric rules |
 | oodle-synthetic | Synthetic monitor management |
+| oodle-metrics-query | PromQL instant and range queries |
+| oodle-logs | Log search and index pattern discovery |
 | oodle-drop-rules | Cost control via metric drop rules |
 
 ## Install
@@ -58,5 +60,9 @@ npx skills add oodle-ai/agent-skills -y
 | List dashboards | `oodle dashboards list -o json` |
 | Search traces | `oodle traces list --service api --from -1h` |
 | Query metrics | `oodle metrics list --match "http_requests"` |
+| Instant PromQL query | `oodle metrics query --query "sum(up)" -o json` |
+| Range PromQL query | `oodle metrics query-range --query "up" --start -1h --end now --step 60s -o json` |
+| List log index patterns | `oodle logs index-patterns -o json` |
+| Search logs | `oodle logs query -f query.ndjson -o json` |
 | List notifiers | `oodle notifiers list -o json` |
 | List drop rules | `oodle drop-rules list -o json` |
