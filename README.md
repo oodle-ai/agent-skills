@@ -4,7 +4,7 @@ Public repository of agent skills for the [Oodle](https://oodle.ai) observabilit
 
 These skills are designed so that an AI assistant can:
 
-- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics) with a single, predictable workflow.
+- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics) and run PromQL/log queries with a single, predictable workflow.
 - Avoid common mistakes such as alert fatigue, accidental dashboard overwrites, untested notifiers, and runaway metric ingestion costs.
 - Produce output that other tools and scripts can consume (`-o json`) and run safely in CI (`--force`, `--retries N`).
 
@@ -20,6 +20,8 @@ These skills are designed so that an AI assistant can:
 | [oodle-traces](skills/oodle-traces/SKILL.md) | Trace search by service, operation, duration, error |
 | [oodle-log-metrics](skills/oodle-log-metrics/SKILL.md) | Log-based metric rules — filters and groupBy |
 | [oodle-synthetic](skills/oodle-synthetic/SKILL.md) | HTTP/TCP synthetic monitors with assertions |
+| [oodle-metrics-query](skills/oodle-metrics-query/SKILL.md) | PromQL instant and range queries |
+| [oodle-logs](skills/oodle-logs/SKILL.md) | Log search and index pattern discovery |
 | [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop / sample rules for ingestion cost control |
 
 ## Install
@@ -96,6 +98,10 @@ cp -r agent-skills/skills/* ~/.<agent>/skills/
 | Search metrics | `oodle metrics list --match "http_requests"` |
 | List metric labels | `oodle metrics labels http_requests_total` |
 | List label values | `oodle metrics label-values http_requests_total service` |
+| Instant PromQL query | `oodle metrics query --query "sum(up)" -o json` |
+| Range PromQL query | `oodle metrics query-range --query "up" --start -1h --end now --step 60s -o json` |
+| List log index patterns | `oodle logs index-patterns -o json` |
+| Search logs | `oodle logs query -f query.ndjson -o json` |
 | Search traces | `oodle traces list --service api --from -1h` |
 | Get trace | `oodle traces get <trace-id> -o json` |
 | List log metrics | `oodle log-metrics list -o json` |
