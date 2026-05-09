@@ -4,7 +4,7 @@ Public repository of agent skills for the [Oodle](https://oodle.ai) observabilit
 
 These skills are designed so that an AI assistant can:
 
-- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics) and run PromQL/log queries with a single, predictable workflow.
+- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics, integrations) and run PromQL/log queries with a single, predictable workflow.
 - Avoid common mistakes such as alert fatigue, accidental dashboard overwrites, untested notifiers, and runaway metric ingestion costs.
 - Produce output that other tools and scripts can consume (`-o json`) and run safely in CI (`--force`, `--retries N`).
 
@@ -23,6 +23,7 @@ These skills are designed so that an AI assistant can:
 | [oodle-metrics-query](skills/oodle-metrics-query/SKILL.md) | PromQL instant and range queries |
 | [oodle-logs](skills/oodle-logs/SKILL.md) | Log search and index pattern discovery |
 | [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop / sample rules for ingestion cost control |
+| [oodle-onboarding](skills/oodle-onboarding/SKILL.md) | Integration onboarding — list integrations, fetch setup specs, execute step-by-step installation |
 
 ## Install
 
@@ -107,6 +108,8 @@ cp -r agent-skills/skills/* ~/.<agent>/skills/
 | List log metrics | `oodle log-metrics list -o json` |
 | List synthetic monitors | `oodle synthetic-monitors list -o json` |
 | List drop rules | `oodle drop-rules list -o json` |
+| List integrations | `oodle integrations list -o json` |
+| Get integration setup spec | `oodle integrations get-setup-spec <type> -o json` |
 
 ## Authoring Conventions
 
