@@ -4,7 +4,7 @@ Public repository of agent skills for the [Oodle](https://oodle.ai) observabilit
 
 These skills are designed so that an AI assistant can:
 
-- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics) and run PromQL/log queries with a single, predictable workflow.
+- Discover and operate Oodle resources (monitors, dashboards, notifiers, traces, metrics, synthetic monitors, drop rules, log metrics, integrations) and run PromQL/log queries with a single, predictable workflow.
 - Avoid common mistakes such as alert fatigue, accidental dashboard overwrites, untested notifiers, and runaway metric ingestion costs.
 - Produce output that other tools and scripts can consume (`-o json`) and run safely in CI (`--force`, `--retries N`).
 

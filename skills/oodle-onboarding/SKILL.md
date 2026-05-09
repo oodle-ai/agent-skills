@@ -43,7 +43,7 @@ Follow this sequence for every integration onboarding request:
 3. Run `oodle integrations get-setup-spec <type> -o json` to fetch the authoritative setup specification. This does NOT require auth.
 4. Check every requirement listed in the spec (tools, access, permissions).
 5. Collect every required parameter (from environment, user's request, or by asking).
-6. Execute the setup steps from the spec **one at a time**, confirming with the user before each resource-creating command.
+6. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
 7. Validate the integration by running `oodle integrations list -o json` and checking the status.
 
 Do not skip steps. Do not invent steps that are not in the setup spec.
@@ -77,10 +77,7 @@ oodle integrations get-setup-spec some-random-type -o json
 ### Fetching a setup spec
 
 ```bash
-# ✅ CORRECT — fetch spec for a known integration type
-oodle integrations get-setup-spec kubernetes -o json
-
-# ✅ CORRECT — works without auth configured
+# ✅ CORRECT — fetch spec for a known type (no auth required)
 oodle integrations get-setup-spec kubernetes -o json
 
 # ✅ CORRECT — use --api-url if default URL is wrong
@@ -136,7 +133,7 @@ Collect all required parameters before starting execution. Check these sources i
 
 ### Confirm before creating or modifying resources
 
-Always show the exact command you will run and wait for user confirmation before executing any command that creates, modifies, or deletes resources. Read-only commands (list, get, describe) do not need confirmation.
+Show the command you will run and wait for user confirmation before executing any command that creates, modifies, or deletes resources. Read-only commands (list, get, describe) do not need confirmation. **Redact secrets in the displayed command** — show the redacted version for confirmation, then run the unredacted version internally. For commands that require secret values (e.g., `helm install --set apiKey=...`), prefer passing secrets via temp files, stdin, or environment variables rather than command-line arguments to avoid shell history exposure.
 
 ### Handle existing resources gracefully
 
