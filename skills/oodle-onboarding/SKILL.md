@@ -45,6 +45,7 @@ Follow this sequence for every integration onboarding request:
 5. Collect every required parameter (from environment, user's request, or by asking).
 6. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
 7. Validate the integration by running `oodle integrations list -o json` and checking the status.
+8. **Verify data presence on Oodle side** using the query skills (see "Post-Install Validation with Query Skills" below). This confirms data is not just being sent but is actually queryable.
 
 Do not skip steps. Do not invent steps that are not in the setup spec.
 
@@ -159,6 +160,42 @@ kubectl get pods -n oodle-system
 # ❌ WRONG — assuming success without verification
 echo "Integration complete!"
 ```
+
+## Post-Install Validation with Query Skills
+
+After the integration status shows `RECEIVING`, verify that data is actually queryable on the Oodle side. Use the companion query skills to confirm each signal type that the integration supports.
+
+**Invoke the appropriate skill for each signal the integration covers:**
+
+| Signal | Skill to use | Validation query |
+|--------|-------------|-----------------|
+| Metrics | `/oodle-metrics-query` | `oodle metrics query --query 'up{cluster="<clusterName>"}' --time now -o json` |
+| Metrics (APM/Beyla) | `/oodle-metrics-query` | `oodle metrics query --query 'http_server_request_duration_seconds_count{k8s_namespace_name="<namespace>"}' --time now -o json` |
+| Logs | `/oodle-logs` | `oodle logs query -f <ndjson-file> -o json` (query by cluster or namespace) |
+| Traces | `/oodle-traces` | `oodle traces list --start -15m --end now --limit 5 -o json` |
+| Service Graph | `/oodle-metrics-query` | `oodle metrics query --query 'traces_service_graph_request_total{client="<service>"}' --time now -o json` |
+
+**How to invoke skills from within the onboarding flow:**
+
+Agents with access to the Skill tool should call the relevant skill for validation. If the Skill tool is not available (e.g., in a sub-agent), use the `oodle` CLI commands directly as shown above.
+
+```
+# Example: after Kubernetes integration completes, validate metrics
+Skill(skill: "oodle-metrics-query", args: "query up{cluster=\"minikube\"}")
+
+# Example: validate traces are flowing
+Skill(skill: "oodle-traces", args: "list recent traces for service frontend-api")
+```
+
+**Validation is successful when:**
+- At least one metric series is returned for the cluster
+- Logs return non-zero hits (if logs are in the integration's categories)
+- Traces show spans from expected services (if traces are in the integration's categories)
+
+**If validation fails but integration shows RECEIVING:**
+- Data may still be propagating — wait 2-3 minutes and retry
+- Check that the query targets the correct cluster name / namespace / service name
+- For logs: check index pattern with `oodle logs index-patterns -o json` first
 
 ## Best Practices
 
