@@ -39,8 +39,8 @@ oodle --version
 Follow this sequence for every integration onboarding request:
 
 1. **Identify the integration type** from the user's request (e.g., "kubernetes", "aws-cloudwatch").
-2. If the type is unknown or the user didn't specify one, run `oodle integrations list -o json` to show available integrations and ask the user to choose. This command requires authentication — if auth is not configured, guide the user through setup first (see Prerequisites), or skip to step 3 if the user already named a type.
-3. Run `oodle integrations get-setup-spec <type> -o json` to fetch the authoritative setup specification. This does NOT require auth.
+2. Run `oodle integrations list -o json` to get the full integration records. From this output, extract: (a) the `type` field (lowercase it for step 3), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. If auth is not configured, guide the user through setup first (see Prerequisites), or skip to step 3 if the user already named a type.
+3. Run `oodle integrations get-setup-spec <type-lowercase> -o json` to fetch the authoritative setup specification. This does NOT require auth.
 4. Check every requirement listed in the spec (tools, access, permissions).
 5. Collect every required parameter (from environment, user's request, or by asking).
 6. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
@@ -58,6 +58,51 @@ Do not skip steps. Do not invent steps that are not in the setup spec.
 | Get setup spec (YAML) | `oodle integrations get-setup-spec <type> -o yaml` |
 
 Aliases: `oodle integration`, `oodle integ`
+
+## Critical Gotchas
+
+### Integration type must be lowercase in `get-setup-spec`
+
+The `type` field in `integrations list` is UPPERCASE (e.g., `KUBERNETES`, `OTEL`) but `get-setup-spec` requires **lowercase** (e.g., `kubernetes`). Always lowercase the type before calling `get-setup-spec`.
+
+### Helm values: `oodleMetricsHost` and `oodleLogsHost` MUST include `https://` scheme
+
+The helm chart constructs URLs by appending paths to these values (e.g., `%{OODLE_METRICS_HOST}/v1/prometheus/.../write`). If the scheme is missing, vmagent will crash with `unsupported scheme` error.
+
+```yaml
+# ✅ CORRECT — include https:// prefix
+oodleConfig:
+  oodleMetricsHost: "https://inst-example.collector.oodle.ai"
+  oodleLogsHost: "https://inst-example-logs.collector.oodle.ai"
+
+# ❌ WRONG — missing scheme causes vmagent CrashLoopBackOff
+oodleConfig:
+  oodleMetricsHost: "inst-example.collector.oodle.ai"
+  oodleLogsHost: "inst-example-logs.collector.oodle.ai"
+```
+
+### Use `helm search repo` to find chart version — not index.yaml
+
+```bash
+# ✅ CORRECT — fast and reliable
+helm repo add --force-update oodle https://oodle-ai.github.io/helm-charts
+helm search repo oodle/oodle-k8s-observability
+
+# ❌ WRONG — slow, parsing issues with large YAML
+curl -s https://oodle-ai.github.io/helm-charts/index.yaml | grep ...
+```
+
+### Resolve `instanceId` from `oodle auth status`
+
+The instance ID is available from the CLI's own config:
+
+```bash
+# ✅ CORRECT — use oodle auth status (reads from ~/.oodle/config.yaml)
+oodle auth status -o json
+# Returns: { "instance": "inst-example-abc123", ... }
+
+# Config file location: ~/.oodle/config.yaml
+```
 
 ## Common Operations
 
@@ -79,9 +124,6 @@ oodle integrations get-setup-spec some-random-type -o json
 ```bash
 # ✅ CORRECT — fetch spec for a known type (no auth required)
 oodle integrations get-setup-spec kubernetes -o json
-
-# ✅ CORRECT — use --api-url if default URL is wrong
-oodle integrations get-setup-spec kubernetes -o json --api-url https://us1.oodle.ai
 
 # ❌ WRONG — hardcoding setup steps instead of fetching the spec
 kubectl apply -f https://some-hardcoded-url/oodle-collector.yaml
@@ -147,6 +189,10 @@ Never display full API keys, tokens, or passwords. Show only the first and last 
 
 Execute setup steps sequentially. Verify each step succeeded before moving to the next. If a step fails, diagnose the issue and suggest a fix — do not continue to the next step.
 
+### Kubernetes Helm values: minikube / small clusters
+
+For minikube or single-node clusters, consider reducing `vmagent.replicaCount` to 1 (default from spec is 2). The default sharding config works but is unnecessary overhead for small clusters.
+
 ### Present a summary when done
 
 After all steps complete and validation passes, present a summary:
@@ -161,12 +207,13 @@ After all steps complete and validation passes, present a summary:
 |-----------|--------|
 | `oodle` CLI not installed | Install via `brew install oodle-ai/oodle/oodle` or `go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest` |
 | CLI not configured (auth error) | Guide user through `oodle configure` or env vars. For `get-setup-spec`, proceed without auth. |
-| Integration type not found (404) | Run `oodle integrations list` to show available types, ask user to choose |
+| Integration type not found (404) | Lowercase the type (e.g., `KUBERNETES` → `kubernetes`). If still failing, run `oodle integrations list` to show available types. |
 | Requirement not met (e.g., no kubectl) | Tell user what's missing, provide install instructions, wait for confirmation |
 | Setup step fails | Show the error output, diagnose the issue, suggest a fix. Do not continue to the next step. |
 | Namespace already exists | Skip creation, note it was already present |
 | Helm release already installed | Suggest `helm upgrade` instead of `helm install` |
 | Validation fails (integration not active) | Wait 60 seconds and retry. If still failing, check component logs and present diagnostics. |
+| Helm `--wait` timeout | Does NOT mean failure. Check `helm list -n <ns>` and `kubectl get pods`. If pods are in CrashLoopBackOff, diagnose logs. If pods are still starting (Pending/ContainerCreating), wait longer. On minikube/resource-constrained clusters, consider `--timeout 10m`. |
 | Timeout waiting for pods | Check events with `kubectl describe pod`, present findings to user |
 | Permission denied | Tell user which permission is needed and how to grant it |
 
