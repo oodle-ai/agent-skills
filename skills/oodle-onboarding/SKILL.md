@@ -175,17 +175,9 @@ After the integration status shows `RECEIVING`, verify that data is actually que
 | Traces | `/oodle-traces` | `oodle traces list --start -15m --end now --limit 5 -o json` |
 | Service Graph | `/oodle-metrics-query` | `oodle metrics query --query 'traces_service_graph_request_total{client="<service>"}' --time now -o json` |
 
-**How to invoke skills from within the onboarding flow:**
+**How to validate from within the onboarding flow:**
 
-Agents with access to the Skill tool should call the relevant skill for validation. If the Skill tool is not available (e.g., in a sub-agent), use the `oodle` CLI commands directly as shown above.
-
-```
-# Example: after Kubernetes integration completes, validate metrics
-Skill(skill: "oodle-metrics-query", args: "query up{cluster=\"minikube\"}")
-
-# Example: validate traces are flowing
-Skill(skill: "oodle-traces", args: "list recent traces for service frontend-api")
-```
+After installation completes, run the CLI commands from the table above directly. These are the same commands the query skills use internally — no need to invoke a separate skill during onboarding. The validation queries are simple enough to run inline.
 
 **Validation is successful when:**
 - At least one metric series is returned for the cluster
