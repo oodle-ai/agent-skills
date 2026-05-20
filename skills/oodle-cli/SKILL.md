@@ -37,7 +37,7 @@ export OODLE_DEPLOYMENT=<your-deployment-url>   # e.g. https://app.oodle.ai
 Verify the CLI works before issuing any other command:
 
 ```bash
-oodle --version
+oodle version
 oodle monitors list -o json | head
 ```
 

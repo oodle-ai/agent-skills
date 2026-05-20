@@ -15,7 +15,7 @@ Before starting any onboarding work, verify the Oodle CLI is installed and authe
 ### Step 1: Check if the CLI is installed
 
 ```bash
-oodle --version
+oodle version
 ```
 
 If the command is not found, install it:
