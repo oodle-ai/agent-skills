@@ -12,7 +12,7 @@ metadata:
 
 # Oodle Onboarding — Integration Setup
 
-This skill teaches the agent to integrate infrastructure with the Oodle observability platform using the `oodle integrations` commands. The setup spec fetched from the API is the source of truth — never hardcode integration steps.
+This skill teaches the agent to integrate infrastructure with the Oodle observability platform using the `oodle integrations` commands. The agent should actively discover the user's environment to recommend integrations and adapt setup steps. The setup spec is a blueprint — it defines the approach and parameters, but the agent adapts execution based on what it finds in the codebase and environment.
 
 ## Prerequisites
 
@@ -38,17 +38,58 @@ oodle --version
 
 Follow this sequence for every integration onboarding request:
 
-1. **Identify the integration type** from the user's request (e.g., "kubernetes", "aws-cloudwatch").
-2. If the type is unknown or the user didn't specify one, run `oodle integrations list-setup-specs -o json` to discover all available integration types that have setup specs. This command does NOT require authentication. Ask the user to choose from the list.
-3. Run `oodle integrations list -o json` to get the full integration records. From this output, extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. This command requires authentication — if auth is not configured, guide the user through setup first (see Prerequisites).
-4. Run `oodle integrations get-setup-spec <type-lowercase> -o json` to fetch the authoritative setup specification. This does NOT require auth.
-5. Check every requirement listed in the spec (tools, access, permissions).
-6. Collect every required parameter (from environment, user's request, or by asking).
-7. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
-8. Validate the integration by running `oodle integrations list -o json` and checking the status.
-9. **Verify data presence on Oodle side** using the query skills (see "Post-Install Validation with Query Skills" below). This confirms data is not just being sent but is actually queryable.
+1. **Identify the integration type.** If the user named one (e.g., "kubernetes", "aws-cloudwatch"), use it. Otherwise, run environment discovery (see below) to detect what infrastructure is present, then recommend matching integrations.
+2. **Fetch available setup specs** — run `oodle integrations list-setup-specs -o json` (no auth required) to confirm the integration type exists and to cross-reference against environment discovery results.
+3. **Fetch integration records** — run `oodle integrations list -o json` to extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. This requires authentication — if auth is not configured, guide the user through setup first (see Prerequisites).
+4. **Fetch the setup spec** — run `oodle integrations get-setup-spec <type-lowercase> -o json`. This is the **blueprint** for integration, not a rigid script. It defines the general approach, required tools, and parameters.
+5. **Discover the environment in depth** — probe the codebase, running services, and existing configs to understand how the user's infrastructure is set up. Use these findings to resolve parameters and adapt the spec's steps (see "Environment Discovery" below).
+6. **Collect remaining parameters** — after environment discovery, ask the user for anything that couldn't be auto-detected. Group questions together rather than asking one at a time.
+7. **Execute the setup** — work through the spec's steps, adapting each one based on what you discovered. Confirm with the user before every non-read-only command.
+8. **Validate the integration** — run `oodle integrations list -o json` and check the status.
+9. **Verify data presence on Oodle side** using the query skills (see "Post-Install Validation with Query Skills" below).
 
-Do not skip steps. Do not invent steps that are not in the setup spec.
+## Environment Discovery
+
+When the user hasn't specified an integration type — or even when they have — probe the environment to understand what's already in place. This serves two purposes: (a) recommending the right integration, and (b) adapting setup steps to the actual environment.
+
+### Detecting infrastructure (to recommend integrations)
+
+Run these checks and match results against available setup specs from `list-setup-specs`:
+
+| Signal | What to check | Suggests integration |
+|--------|--------------|---------------------|
+| Kubernetes | `kubectl cluster-info`, `kubectl config current-context`, presence of `kubeconfig` | `kubernetes` |
+| OpenTelemetry Collector | `otelcol --version`, processes matching `otelcol`, `otel-collector` config files in codebase | `otel` |
+| AWS | `aws sts get-caller-identity`, `~/.aws/credentials`, env vars `AWS_ACCESS_KEY_ID`/`AWS_REGION` | `aws-cloudwatch` |
+| GCP | `gcloud config get-value project`, `~/.config/gcloud/`, env var `GOOGLE_CLOUD_PROJECT` | `gcp-*` |
+| Docker / containers | `docker info`, `docker-compose.yml` / `compose.yaml` in codebase | `kubernetes` (if k8s), or container-based integrations |
+| Helm | `helm version`, existing helm releases (`helm list -A`) | Kubernetes-based integrations |
+| Terraform | `*.tf` files in codebase, `terraform show` | Cloud provider integrations matching the providers in tf files |
+| Prometheus | `prometheus --version`, processes matching `prometheus`, prometheus config files | `otel` or `kubernetes` |
+| Existing Oodle components | `kubectl get pods -n oodle-system`, `helm list -n oodle-system` | Already partially integrated — check what's missing |
+
+Present your findings to the user: "I detected X, Y, Z in your environment. Based on available setup specs, I recommend the **foo** integration. Shall I proceed?"
+
+### Adapting setup steps (to execute the blueprint)
+
+The setup spec is a blueprint — it tells you **what** needs to happen, not necessarily the exact commands for the user's specific environment. Before executing each step, probe for existing state:
+
+| Before this step... | Check for... |
+|---------------------|-------------|
+| Create namespace | `kubectl get namespace <name>` — skip if exists |
+| Add helm repo | `helm repo list` — skip if already added, use `--force-update` to refresh |
+| Install helm chart | `helm list -n <namespace>` — if release exists, use `helm upgrade` instead |
+| Create secrets/ConfigMaps | `kubectl get secret/configmap <name> -n <ns>` — skip or update if exists |
+| Apply manifests | Check if resources already exist, diff against desired state |
+| Set up cloud credentials | Check if credentials already exist in expected locations |
+| Configure collector endpoints | Inspect existing collector config files for current endpoint settings |
+
+The spec's parameter values are defaults — prefer values discovered from the environment:
+- **Cluster name**: from `kubectl config current-context` or existing helm release values
+- **Namespace**: from existing Oodle deployments or user's conventions
+- **Collector endpoints**: from existing config files (e.g., `otel-collector-config.yaml`)
+- **API keys**: from `oodle integrations list` output or existing secrets
+- **Resource sizing**: adapt to cluster size (e.g., minikube gets `replicaCount: 1`)
 
 ## Quick Reference
 
@@ -143,16 +184,24 @@ oodle integrations get-setup-spec kubernetes -o json
 kubectl apply -f https://some-hardcoded-url/oodle-collector.yaml
 ```
 
-### Executing setup steps from the spec
+### Executing setup steps (adapting the blueprint)
+
+The spec tells you what needs to happen. Discover the current state before each step and adapt:
 
 ```bash
+# ✅ CORRECT — check existing state, then adapt
+kubectl get namespace oodle-system 2>/dev/null && echo "Already exists, skipping" || kubectl create namespace oodle-system
+
+# ✅ CORRECT — existing release? upgrade instead of install
+helm list -n oodle-system | grep oodle && helm upgrade ... || helm install ...
+
 # ✅ CORRECT — show the command and ask for confirmation before running
 echo "I will run: kubectl create namespace oodle-system"
 # [wait for user confirmation]
 kubectl create namespace oodle-system
 
-# ✅ CORRECT — check if resource already exists before creating
-kubectl get namespace oodle-system 2>/dev/null && echo "Already exists, skipping" || kubectl create namespace oodle-system
+# ❌ WRONG — blindly running spec commands without checking existing state
+kubectl create namespace oodle-system  # fails if already exists
 
 # ❌ WRONG — running destructive commands without confirmation
 kubectl delete namespace oodle-system
@@ -206,14 +255,14 @@ After installation completes, run the CLI commands from the table above directly
 
 ### Always fetch the latest setup spec
 
-Run `oodle integrations get-setup-spec <type> -o json` at the start of every onboarding session. Never cache or reuse a previously fetched spec — requirements and steps change as the platform evolves.
+Run `oodle integrations get-setup-spec <type> -o json` at the start of every onboarding session. Never cache or reuse a previously fetched spec — requirements and steps change as the platform evolves. Treat the spec as a blueprint: it defines what needs to happen and what parameters are required, but adapt the exact commands and values based on environment discovery.
 
-### Resolve parameters before executing
+### Resolve parameters by discovery first, ask second
 
 Collect all required parameters before starting execution. Check these sources in order:
-1. **Environment** — e.g., `kubectl config current-context` for cluster name, env vars for API keys.
+1. **Environment discovery** — probe actively: `kubectl config current-context` for cluster name, `helm list` for existing releases, process lists for running collectors, config files in the codebase for endpoints, env vars for API keys.
 2. **User's request** — the user may have specified values in their prompt.
-3. **Ask the user** — group remaining questions together rather than asking one at a time.
+3. **Ask the user** — only for what couldn't be auto-detected. Group remaining questions together.
 
 ### Confirm before creating or modifying resources
 
