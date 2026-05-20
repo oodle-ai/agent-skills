@@ -10,23 +10,41 @@ Integrate infrastructure with the Oodle observability platform using `oodle inte
 
 ## Prerequisites
 
-```bash
-# Install + configure (see oodle-cli skill)
-brew install oodle-ai/oodle/oodle
-oodle configure
-# or
-export OODLE_API_KEY=<key>
-export OODLE_INSTANCE=<instance>
-export OODLE_DEPLOYMENT=<url>
-```
+Before starting any onboarding work, verify the Oodle CLI is installed and authenticated. Run these checks at the beginning of every session:
 
-Verify the CLI works:
+### Step 1: Check if the CLI is installed
 
 ```bash
 oodle --version
 ```
 
-**Note:** `oodle integrations list-setup-specs` and `oodle integrations get-setup-spec` do NOT require authentication. Use these to discover available integrations and fetch setup instructions before the CLI is fully configured. All other integration commands require valid credentials.
+If the command is not found, install it:
+
+```bash
+brew install oodle-ai/oodle/oodle
+```
+
+If `brew` is not available, fall back to:
+
+```bash
+go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest
+```
+
+### Step 2: Check if the CLI is authenticated
+
+```bash
+oodle auth status
+```
+
+If not authenticated or the status shows an error, run interactive login:
+
+```bash
+oodle auth login
+```
+
+This opens a browser for OAuth login. The user must complete the browser flow — prompt them to do so and wait for confirmation. After login succeeds, verify with `oodle auth status`.
+
+**Note:** `oodle integrations list-setup-specs` and `oodle integrations get-setup-spec` do NOT require authentication. Use these to discover available integrations and fetch setup instructions even before auth is configured. All other integration commands require valid credentials — complete the auth steps above before proceeding past step 2 in the Command Execution Order.
 
 ## Command Execution Order
 
@@ -34,7 +52,7 @@ Follow this sequence for every integration onboarding request:
 
 1. **Identify the integration type.** If the user named one (e.g., "kubernetes", "aws-cloudwatch"), use it. Otherwise, run environment discovery to detect present infrastructure and recommend matching integrations (see `references/environment-discovery.md`).
 2. **Fetch available setup specs** — run `oodle integrations list-setup-specs -o json` (no auth required) to confirm the type exists and cross-reference against discovery results.
-3. **Fetch integration records** — run `oodle integrations list -o json` to extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. Requires authentication — if not configured, guide the user through setup first (see Prerequisites).
+3. **Fetch integration records** — run `oodle integrations list -o json` to extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. Requires authentication — if not configured, complete Prerequisites steps 1–2 first.
 4. **Fetch the setup spec** — run `oodle integrations get-setup-spec <type-lowercase> -o json`. This is the **blueprint** for integration, not a rigid script. It defines the general approach, required tools, and parameters.
 5. **Discover the environment in depth** — probe the codebase, running services, and existing configs. Use findings to resolve parameters and adapt the spec's steps (see `references/environment-discovery.md`).
 6. **Collect remaining parameters** — after discovery, ask the user for anything that could not be auto-detected. Group questions together.
