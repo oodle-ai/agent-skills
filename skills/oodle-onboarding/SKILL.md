@@ -1,6 +1,6 @@
 ---
 name: oodle-onboarding
-description: Integrate infrastructure with the Oodle observability platform — list available integrations, fetch setup specs, and execute step-by-step installation for any integration type (Kubernetes, AWS, GCP, etc.).
+description: Integrate infrastructure with the Oodle observability platform — discover available integrations via setup specs, fetch setup instructions, and execute step-by-step installation for any integration type (Kubernetes, AWS, GCP, etc.).
 metadata:
   version: "1.0.0"
   author: oodle-ai
@@ -32,31 +32,34 @@ Verify the CLI works:
 oodle --version
 ```
 
-**Note:** `oodle integrations get-setup-spec` does NOT require authentication. Use it to fetch setup instructions even before the CLI is fully configured. All other integration commands require valid credentials.
+**Note:** `oodle integrations list-setup-specs` and `oodle integrations get-setup-spec` do NOT require authentication. Use them to discover available integrations and fetch setup instructions even before the CLI is fully configured. All other integration commands require valid credentials.
 
 ## Command Execution Order
 
 Follow this sequence for every integration onboarding request:
 
 1. **Identify the integration type** from the user's request (e.g., "kubernetes", "aws-cloudwatch").
-2. Run `oodle integrations list -o json` to get the full integration records. From this output, extract: (a) the `type` field (lowercase it for step 3), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. If auth is not configured, guide the user through setup first (see Prerequisites), or skip to step 3 if the user already named a type.
-3. Run `oodle integrations get-setup-spec <type-lowercase> -o json` to fetch the authoritative setup specification. This does NOT require auth.
-4. Check every requirement listed in the spec (tools, access, permissions).
-5. Collect every required parameter (from environment, user's request, or by asking).
-6. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
-7. Validate the integration by running `oodle integrations list -o json` and checking the status.
-8. **Verify data presence on Oodle side** using the query skills (see "Post-Install Validation with Query Skills" below). This confirms data is not just being sent but is actually queryable.
+2. If the type is unknown or the user didn't specify one, run `oodle integrations list-setup-specs -o json` to discover all available integration types that have setup specs. This command does NOT require authentication. Ask the user to choose from the list.
+3. Run `oodle integrations list -o json` to get the full integration records. From this output, extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. This command requires authentication — if auth is not configured, guide the user through setup first (see Prerequisites).
+4. Run `oodle integrations get-setup-spec <type-lowercase> -o json` to fetch the authoritative setup specification. This does NOT require auth.
+5. Check every requirement listed in the spec (tools, access, permissions).
+6. Collect every required parameter (from environment, user's request, or by asking).
+7. Execute the setup steps from the spec **one at a time**, confirming with the user before every non-read-only command (any command that creates, modifies, or deletes resources).
+8. Validate the integration by running `oodle integrations list -o json` and checking the status.
+9. **Verify data presence on Oodle side** using the query skills (see "Post-Install Validation with Query Skills" below). This confirms data is not just being sent but is actually queryable.
 
 Do not skip steps. Do not invent steps that are not in the setup spec.
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| List integrations | `oodle integrations list -o json` |
-| List integrations (table) | `oodle integrations list` |
-| Get setup spec | `oodle integrations get-setup-spec <type> -o json` |
-| Get setup spec (YAML) | `oodle integrations get-setup-spec <type> -o yaml` |
+| Task | Command | Auth required? |
+|------|---------|----------------|
+| Discover available setup specs | `oodle integrations list-setup-specs -o json` | No |
+| Discover available setup specs (table) | `oodle integrations list-setup-specs` | No |
+| Get setup spec | `oodle integrations get-setup-spec <type> -o json` | No |
+| Get setup spec (YAML) | `oodle integrations get-setup-spec <type> -o yaml` | No |
+| List configured integrations | `oodle integrations list -o json` | Yes |
+| List configured integrations (table) | `oodle integrations list` | Yes |
 
 Aliases: `oodle integration`, `oodle integ`
 
@@ -107,17 +110,27 @@ oodle auth status -o json
 
 ## Common Operations
 
-### Listing available integrations
+### Discovering available integration types
 
 ```bash
-# ✅ CORRECT — JSON output for parsing
+# ✅ CORRECT — discover all types with setup specs (no auth required)
+oodle integrations list-setup-specs -o json
+
+# ✅ CORRECT — table output for display (no auth required)
+oodle integrations list-setup-specs
+
+# ❌ WRONG — guessing integration types without checking
+oodle integrations get-setup-spec some-random-type -o json
+```
+
+### Listing configured integrations
+
+```bash
+# ✅ CORRECT — check which integrations are already configured (requires auth)
 oodle integrations list -o json
 
 # ✅ CORRECT — table output for display
 oodle integrations list
-
-# ❌ WRONG — guessing integration types without checking
-oodle integrations get-setup-spec some-random-type -o json
 ```
 
 ### Fetching a setup spec
@@ -236,7 +249,7 @@ After all steps complete and validation passes, present a summary:
 |-----------|--------|
 | `oodle` CLI not installed | Install via `brew install oodle-ai/oodle/oodle` or `go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest` |
 | CLI not configured (auth error) | Guide user through `oodle configure` or env vars. For `get-setup-spec`, proceed without auth. |
-| Integration type not found (404) | Lowercase the type (e.g., `KUBERNETES` → `kubernetes`). If still failing, run `oodle integrations list` to show available types. |
+| Integration type not found (404) | Lowercase the type (e.g., `KUBERNETES` → `kubernetes`). If still failing, run `oodle integrations list-setup-specs` to show available types (no auth needed). |
 | Requirement not met (e.g., no kubectl) | Tell user what's missing, provide install instructions, wait for confirmation |
 | Setup step fails | Show the error output, diagnose the issue, suggest a fix. Do not continue to the next step. |
 | Namespace already exists | Skip creation, note it was already present |
