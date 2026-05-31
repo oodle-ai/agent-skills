@@ -145,12 +145,17 @@ oodle notification-policies create -f policy.json
 
 Muting rules silence alerts whose labels match the matchers, between `startsAt` and `endsAt` (RFC 3339).
 
+**Always scope a muting rule to a specific monitor** by including the `_oodle_monitor_id` matcher. Without it, the rule can silence unrelated alerts that happen to share the other labels. Resolve the monitor ID first with `oodle monitors list -o json` (or `oodle monitors get <id>`).
+
+Matcher `type` values: `0` = equals, `1` = not-equals, `2` = regex-match, `3` = regex-not-match.
+
 ```json
 {
   "name": "deploy-window-2024-01-15",
   "matchers": [
-    {"name": "service", "value": "api"},
-    {"name": "env",     "value": "prod"}
+    {"type": 0, "name": "_oodle_monitor_id", "value": "01998476-6dd3-73e8-a4c0-d9137eef6bc9"},
+    {"type": 0, "name": "service", "value": "api"},
+    {"type": 0, "name": "env",     "value": "prod"}
   ],
   "startsAt": "2024-01-15T02:00:00Z",
   "endsAt":   "2024-01-15T06:00:00Z"
@@ -158,11 +163,14 @@ Muting rules silence alerts whose labels match the matchers, between `startsAt` 
 ```
 
 ```bash
-# ✅ CORRECT — bounded window
+# ✅ CORRECT — bounded window, scoped to a specific monitor
 oodle muting-rules create -f mute.json
 
 # ❌ WRONG — endsAt before startsAt (rejected by server)
 # {"startsAt": "2024-01-15T06:00:00Z", "endsAt": "2024-01-15T02:00:00Z"}
+
+# ❌ WRONG — no _oodle_monitor_id matcher; silences every alert with these labels
+# "matchers": [{"type":0,"name":"service","value":"api"},{"type":0,"name":"env","value":"prod"}]
 ```
 
 ## Best Practices
@@ -198,6 +206,23 @@ oodle notifiers delete notif_slack_ops --force
 # ❌ WRONG — delete without checking; live policies suddenly route to a missing receiver
 oodle notifiers delete notif_slack_ops --force
 ```
+
+### Always include `_oodle_monitor_id` in muting rule matchers
+
+A mute without `_oodle_monitor_id` silences every alert whose labels happen to match — frequently far more than intended. Pin it to the monitor being silenced.
+
+```bash
+# ✅ CORRECT — scoped to one monitor
+"matchers": [
+  {"type":0,"name":"_oodle_monitor_id","value":"01998476-6dd3-73e8-a4c0-d9137eef6bc9"},
+  {"type":0,"name":"service","value":"api"}
+]
+
+# ❌ WRONG — any monitor with service=api gets silenced
+"matchers": [{"type":0,"name":"service","value":"api"}]
+```
+
+Resolve the monitor ID with `oodle monitors list -o json | jq '.[] | {id,name}'` before authoring the rule.
 
 ### Always set `endsAt` on muting rules — never create open-ended mutes
 
