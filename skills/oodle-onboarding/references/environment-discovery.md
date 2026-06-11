@@ -41,5 +41,5 @@ The spec's parameter values are defaults — prefer values discovered from the e
 - **Cluster name**: from `kubectl config current-context` or existing helm release values
 - **Namespace**: from existing Oodle deployments or the user's conventions
 - **Collector endpoints**: from existing config files (e.g., `otel-collector-config.yaml`)
-- **API keys**: from `oodle integrations list` output or existing secrets
+- **API keys**: from `oodle api-keys list -o json` output, or create one with `oodle api-keys create --name <name> --scopes <scopes> -o json`
 - **Resource sizing**: adapt to cluster size (e.g., minikube gets `replicaCount: 1`)
