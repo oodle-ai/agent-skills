@@ -52,7 +52,7 @@ Follow this sequence for every integration onboarding request:
 
 1. **Identify the integration type.** If the user named one (e.g., "kubernetes", "aws-cloudwatch"), use it. Otherwise, run environment discovery to detect present infrastructure and recommend matching integrations (see `references/environment-discovery.md`).
 2. **Fetch available setup specs** — run `oodle integrations list-setup-specs -o json` (no auth required) to confirm the type exists and cross-reference against discovery results.
-3. **Fetch integration records** — run `oodle integrations list -o json` to extract: (a) the `type` field (lowercase it for step 4), (b) `apiKey`, (c) `collectorDomain`/`logsCollectorDomain` for helm values, (d) instance ID from the domain pattern. Requires authentication — if not configured, complete Prerequisites steps 1–2 first.
+3. **Fetch integration records** — run `oodle integrations list -o json` to extract: (a) the `type` field (lowercase it for step 4), (b) `collectorDomain`/`logsCollectorDomain` for helm values, (c) instance ID from the domain pattern. Then run `oodle api-keys list -o json` to find an existing API key, or `oodle api-keys create --name <name> --scopes <scopes>` to create one if none exist. Requires authentication — if not configured, complete Prerequisites steps 1–2 first.
 4. **Fetch the setup spec** — run `oodle integrations get-setup-spec <type-lowercase> -o json`. This is the **blueprint** for integration, not a rigid script. It defines the general approach, required tools, and parameters.
 5. **Discover the environment in depth** — probe the codebase, running services, and existing configs. Use findings to resolve parameters and adapt the spec's steps (see `references/environment-discovery.md`).
 6. **Collect remaining parameters** — after discovery, ask the user for anything that could not be auto-detected. Group questions together.
@@ -72,6 +72,8 @@ For failure scenarios, consult `references/failure-handling.md`.
 | Get setup spec (YAML) | `oodle integrations get-setup-spec <type> -o yaml` | No |
 | List configured integrations | `oodle integrations list -o json` | Yes |
 | List configured integrations (table) | `oodle integrations list` | Yes |
+| List API keys | `oodle api-keys list -o json` | Yes |
+| Create API key | `oodle api-keys create --name <name> --scopes <scopes> -o json` | Yes |
 
 Aliases: `oodle integration`, `oodle integ`
 
