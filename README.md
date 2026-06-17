@@ -38,7 +38,7 @@ oodle skills install
 ### Claude Code
 
 ```bash
-npx skills add oodle-ai/agent-skills -y -g
+npx skills add oodle-ai/agent-skills -a claude-code -y -g
 ```
 
 This installs the skills globally under `~/.claude/skills/` and registers the plugin manifest from `.claude-plugin/plugin.json`.
@@ -46,7 +46,7 @@ This installs the skills globally under `~/.claude/skills/` and registers the pl
 ### Cursor
 
 ```bash
-npx skills add oodle-ai/agent-skills --target-agent cursor -y -g
+npx skills add oodle-ai/agent-skills -a cursor -y -g
 ```
 
 This installs the skills into Cursor's rules directory and uses `.cursor-plugin/plugin.json` for plugin metadata.
@@ -54,7 +54,7 @@ This installs the skills into Cursor's rules directory and uses `.cursor-plugin/
 ### Gemini CLI
 
 ```bash
-npx skills add oodle-ai/agent-skills -y -g
+npx skills add oodle-ai/agent-skills -a gemini-cli -y -g
 ```
 
 The `gemini-extension.json` manifest at the repo root is picked up automatically.
@@ -62,13 +62,13 @@ The `gemini-extension.json` manifest at the repo root is picked up automatically
 ### Codex
 
 ```bash
-npx skills add oodle-ai/agent-skills -y -g
+npx skills add oodle-ai/agent-skills -a codex -y -g
 ```
 
 ### Windsurf
 
 ```bash
-npx skills add oodle-ai/agent-skills -y -g
+npx skills add oodle-ai/agent-skills -a windsurf -y -g
 ```
 
 ### Manual install
