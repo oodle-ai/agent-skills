@@ -115,7 +115,7 @@ recommend the author confirm them manually.
 
 ## Output discipline
 
-- Report only findings you are confident are real. Tag each
+- Report only high-confidence findings. Tag each
   `critical` / `important` / `minor`. Do not produce a wall of nitpicks — the
   goal is signal, matching Oodle's avoid-alert-fatigue ethos.
 - **Write results into the manifest**: fill or refine `telemetry` purposes,

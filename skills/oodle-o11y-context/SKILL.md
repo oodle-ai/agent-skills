@@ -44,8 +44,8 @@ gaps: no per-item span in the loop — deferred (cardinality); triage can't attr
 ```
 
 - `telemetry` lines start with `+` (added), `~` (changed), or `-` (removed),
-  followed by the signal and a short **purpose**. If you cannot state a purpose,
-  the signal probably should not exist.
+  followed by the signal and a short **purpose**. A signal whose purpose cannot
+  be stated probably should not exist.
 - Omit a field only when it genuinely has no content (e.g. no `gaps`). Never
   rename a field.
 

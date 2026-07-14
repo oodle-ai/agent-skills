@@ -58,7 +58,7 @@ name (names vary: `oodle-ai-us1`, `ap1`, `staging`, `dev`, or customer-custom).
 3. **Learn the instrumentation from the code.** Read the relevant service code for
    the *actual* metric names, log strings, and span attributes — do not guess
    them. Note explicitly **what is and isn't captured**; knowing what is missing
-   tells you which questions the telemetry cannot answer.
+   reveals which questions the telemetry cannot answer.
 4. **Triangulate across telemetry** — don't lean on one source. Metrics (grouped
    by every dimension that localizes blame: service, tenant, operation, pod,
    status), logs from **caller and callee** on the path (read ERROR/WARN and
@@ -74,7 +74,7 @@ name (names vary: `oodle-ai-us1`, `ap1`, `staging`, `dev`, or customer-custom).
    configured ceiling or default is not a measurement; co-occurrence is not
    causation. Actively try to **falsify the leading hypothesis with one
    measurement** — eliminating a candidate is worth more than adding support.
-7. **When you can't confirm, stop and produce a ranked missing-evidence list:**
+7. **When confirmation is impossible, stop and produce a ranked missing-evidence list:**
    for each item, which hypothesis it would confirm/refute, where it likely lives,
    and whether it is accessible. Then ask to unblock the top item rather than
    guessing past it.
