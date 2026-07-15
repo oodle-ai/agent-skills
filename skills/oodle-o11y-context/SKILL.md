@@ -83,7 +83,8 @@ short block over none.
 ## Carrier
 
 In v1 the manifest lives **only in the PR description**, read back at triage time
-through the GitHub or Linear MCP. A durable git commit trailer and a tracked
+through the GitHub or Linear MCP — or, when no GitHub MCP is present, the `gh`
+CLI (`gh pr list`, `gh pr view`). A durable git commit trailer and a tracked
 in-repo manifest file are deliberately **deferred** — revisit only if triage
 frequently lacks a discoverable PR for a deployed commit.
 

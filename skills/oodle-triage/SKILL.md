@@ -65,7 +65,8 @@ name (names vary: `oodle-ai-us1`, `ap1`, `staging`, `dev`, or customer-custom).
    access logs, widen the filter if a reported log isn't found), traces end to
    end, and profiles for resource incidents.
 5. **Correlate with recent changes (loop closes here).** Find recent PRs touching
-   the alerting service and read their
+   the alerting service (via the GitHub or Linear MCP, or the `gh` CLI when no
+   GitHub MCP is present) and read their
    [Oodle Change Context](../oodle-o11y-context/SKILL.md) blocks. `watch` items
    and `type` focus the hypotheses (a `watch: N+1 ...` becomes the leading
    hypothesis); `guarded-by` confirms the alert↔code link; `gaps` explains
