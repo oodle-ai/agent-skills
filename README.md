@@ -24,6 +24,9 @@ These skills are designed so that an AI assistant can:
 | [oodle-logs](skills/oodle-logs/SKILL.md) | Log search and index pattern discovery |
 | [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop / sample rules for ingestion cost control |
 | [oodle-onboarding](skills/oodle-onboarding/SKILL.md) | Integration onboarding — list integrations, fetch setup specs, execute step-by-step installation |
+| [oodle-o11y-context](skills/oodle-o11y-context/SKILL.md) | Change-context manifest — the PR block that carries a change's observability intent across the SDLC |
+| [oodle-o11y-review](skills/oodle-o11y-review/SKILL.md) | Left-side telemetry review — business context, cardinality, duplication, RED/USE/fan-out, alert-driven scrutiny |
+| [oodle-triage](skills/oodle-triage/SKILL.md) | Right-side triage — single-alert context gathering and windowed auto-triage with fingerprint dedup |
 
 ## Install
 
