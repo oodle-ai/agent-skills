@@ -1,6 +1,6 @@
 ---
 name: oodle-o11y-context
-description: Defines the Oodle Change Context manifest — the structured PR block that carries a change's observability intent (type, touched services, telemetry added/changed, guarding alerts, watch items, gaps) from authoring through review into production triage. Referenced by oodle-o11y-review and oodle-triage.
+description: Defines the O11y Change Context manifest — the structured PR block that carries a change's observability intent (type, touched services, telemetry added/changed, guarding alerts, watch items, gaps) from authoring through review into production triage. Referenced by oodle-o11y-review and oodle-triage.
 metadata:
   version: "1.0.0"
   author: oodle-ai
@@ -10,9 +10,9 @@ metadata:
   alwaysApply: "false"
 ---
 
-# Oodle Change Context — Manifest Spine
+# O11y Change Context — Manifest Spine
 
-This skill defines one thing: the **Oodle Change Context** manifest, a small
+This skill defines one thing: the **O11y Change Context** manifest, a small
 structured block an authoring agent writes into a pull request description. It is
 the connective tissue of the observability loop — the left-side reviewer
 ([oodle-o11y-review](../oodle-o11y-review/SKILL.md)) enriches it, and the
@@ -26,12 +26,12 @@ authored to the moment it breaks in production.
 
 ## The block
 
-Put this fenced block in the PR description. Keep the `## Oodle Change Context`
+Put this fenced block in the PR description. Keep the `## O11y Change Context`
 header and the field keys exactly as written — downstream agents locate and parse
 the block by this shape.
 
 ```markdown
-## Oodle Change Context
+## O11y Change Context
 type: perf, bugfix                 # bugfix | perf | feature | critical-path | refactor | infra
 touches: checkout-svc, order-repo  # deploy/service units changed
 telemetry:
@@ -90,7 +90,7 @@ frequently lacks a discoverable PR for a deployed commit.
 
 ## Stability contract
 
-The `## Oodle Change Context` header and the field keys
+The `## O11y Change Context` header and the field keys
 (`type`, `touches`, `telemetry`, `guarded-by`, `watch`, `gaps`) are a parsing
 contract. Other skills and future automation match on them — do not rename or
 reorder-away fields. Adding a new optional field is safe; renaming an existing one

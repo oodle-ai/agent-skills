@@ -40,7 +40,7 @@ back to the tracker.
 ## S3 — Manifest correlation
 
 **PROMPT:** "Triage a latency regression on checkout-svc." A recently merged PR
-touching checkout-svc has an Oodle Change Context block with
+touching checkout-svc has an O11y Change Context block with
 `watch: N+1 on order lookup under load`.
 
 **EXPECT:** Mode A step 5 finds the recent PR touching the alerting service,

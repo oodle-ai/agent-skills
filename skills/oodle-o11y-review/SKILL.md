@@ -1,6 +1,6 @@
 ---
 name: oodle-o11y-review
-description: Reviews a code change's telemetry during authoring or code review — checks business-context attributes and cardinality placement, telemetry duplication, RED/USE/queue/fan-out coverage, and alert-driven scrutiny of code guarded by existing alerts and SLOs. Writes findings into the Oodle Change Context manifest and hands fixes off to oodle-monitors, oodle-drop-rules, and oodle-log-metrics. Use when reviewing or authoring instrumentation changes.
+description: Reviews a code change's telemetry during authoring or code review — checks business-context attributes and cardinality placement, telemetry duplication, RED/USE/queue/fan-out coverage, and alert-driven scrutiny of code guarded by existing alerts and SLOs. Writes findings into the O11y Change Context manifest and hands fixes off to oodle-monitors, oodle-drop-rules, and oodle-log-metrics. Use when reviewing or authoring instrumentation changes.
 metadata:
   version: "1.0.0"
   author: oodle-ai
@@ -20,7 +20,7 @@ non-duplicative, does it cover the failure modes that matter, and is it adequate
 to debug the alerts that already guard this code.
 
 Review the **diff**, not the whole repository. Findings are recorded in the
-[Oodle Change Context](../oodle-o11y-context/SKILL.md) manifest so they travel
+[O11y Change Context](../oodle-o11y-context/SKILL.md) manifest so they travel
 downstream to triage. Concrete fixes are handed off to the existing Oodle skills
 rather than re-explained here.
 
@@ -120,7 +120,7 @@ recommend the author confirm them manually.
   goal is signal, matching Oodle's avoid-alert-fatigue ethos.
 - **Write results into the manifest**: fill or refine `telemetry` purposes,
   `guarded-by`, `watch`, and `gaps` per the
-  [Oodle Change Context](../oodle-o11y-context/SKILL.md) contract.
+  [O11y Change Context](../oodle-o11y-context/SKILL.md) contract.
 - **Hand off concrete fixes** rather than re-teaching them:
   - add or tune a guarding monitor → [oodle-monitors](../oodle-monitors/SKILL.md)
   - drop or sample a high-cardinality / high-volume metric → [oodle-drop-rules](../oodle-drop-rules/SKILL.md)

@@ -1,6 +1,6 @@
 ---
 name: oodle-triage
-description: Triages production alerts using observability signal. Mode A gathers confirmed-vs-inferred context for a single alert or ticket and updates the tracker; Mode B fans out over alerts that fired in a window, suppresses muted and unrouted noise, dedupes via a stable fingerprint, and files or updates issues idempotently. Correlates alerts to recent changes through the Oodle Change Context manifest. Use when investigating an alert or incident, or running scheduled oncall triage.
+description: Triages production alerts using observability signal. Mode A gathers confirmed-vs-inferred context for a single alert or ticket and updates the tracker; Mode B fans out over alerts that fired in a window, suppresses muted and unrouted noise, dedupes via a stable fingerprint, and files or updates issues idempotently. Correlates alerts to recent changes through the O11y Change Context manifest. Use when investigating an alert or incident, or running scheduled oncall triage.
 metadata:
   version: "1.0.0"
   author: oodle-ai
@@ -14,7 +14,7 @@ metadata:
 
 Turn an alert into evidence, not narrative. This skill gathers production context
 and files disciplined tickets. It closes the loop opened on the left: it reads the
-[Oodle Change Context](../oodle-o11y-context/SKILL.md) manifest on recent PRs to
+[O11y Change Context](../oodle-o11y-context/SKILL.md) manifest on recent PRs to
 connect a firing alert to the change that likely caused it.
 
 > **Prime directive:** separate what is *proven* from what is *inferred* at every
@@ -67,7 +67,7 @@ name (names vary: `oodle-ai-us1`, `ap1`, `staging`, `dev`, or customer-custom).
 5. **Correlate with recent changes (loop closes here).** Find recent PRs touching
    the alerting service (via the GitHub or Linear MCP, or the `gh` CLI when no
    GitHub MCP is present) and read their
-   [Oodle Change Context](../oodle-o11y-context/SKILL.md) blocks. `watch` items
+   [O11y Change Context](../oodle-o11y-context/SKILL.md) blocks. `watch` items
    and `type` focus the hypotheses (a `watch: N+1 ...` becomes the leading
    hypothesis); `guarded-by` confirms the alert↔code link; `gaps` explains
    evidence the telemetry was never built to provide.
