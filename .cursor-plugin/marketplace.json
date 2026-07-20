@@ -1,0 +1,17 @@
+{
+  "name": "oodle-ai",
+  "owner": {
+    "name": "Oodle",
+    "email": "support@oodle.ai"
+  },
+  "metadata": {
+    "description": "Oodle observability platform skills for AI coding assistants"
+  },
+  "plugins": [
+    {
+      "name": "oodle-agent-skills",
+      "source": ".",
+      "description": "Oodle observability skills — monitors, dashboards, alerting, metrics, traces, logs, drop rules, onboarding, and the o11y-in-SDLC workflow (context manifest, telemetry review, triage)."
+    }
+  ]
+}
