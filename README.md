@@ -1,6 +1,6 @@
 # Oodle Agent Skills
 
-Public repository of agent skills for the [Oodle](https://oodle.ai) observability platform. Each skill is a structured `SKILL.md` document that teaches AI coding assistants (Claude Code, Cursor, Gemini CLI, Codex, Windsurf, and the Oodle CLI itself) how to drive the [`oodle` CLI](https://github.com/oodle-ai/oodle-cli) correctly — with prescriptive rules, executable examples, and clear failure-handling guidance.
+Public repository of agent skills for the [Oodle](https://oodle.ai) observability platform. Each skill is a structured `SKILL.md` document that teaches AI coding assistants (Claude Code, Cursor, Codex, GitHub Copilot, Factory.ai, Gemini CLI, Windsurf, and the Oodle CLI itself) how to drive the [`oodle` CLI](https://github.com/oodle-ai/oodle-cli) correctly — with prescriptive rules, executable examples, and clear failure-handling guidance.
 
 These skills are designed so that an AI assistant can:
 
@@ -30,48 +30,66 @@ These skills are designed so that an AI assistant can:
 
 ## Install
 
-### Primary: Oodle CLI (recommended)
+### Native plugin marketplaces (recommended — auto-updating)
+
+Several agents can install this repo as a plugin straight from GitHub and **auto-update** it — no file copying, no manual re-pulls. In every case the marketplace is named `oodle-ai` and the plugin is `oodle-agent-skills`, so the install target is `oodle-agent-skills@oodle-ai`.
+
+**Claude Code** — reads `.claude-plugin/marketplace.json`:
+
+```
+/plugin marketplace add oodle-ai/agent-skills
+/plugin install oodle-agent-skills@oodle-ai
+```
+
+Update on demand with `/plugin marketplace update oodle-ai` (plugins otherwise auto-update in the background).
+
+**GitHub Copilot CLI** — also reads `.claude-plugin/marketplace.json` directly:
+
+```
+copilot plugin marketplace add oodle-ai/agent-skills
+copilot plugin install oodle-agent-skills@oodle-ai
+```
+
+**Factory.ai (Droid)** — reads `.factory-plugin/marketplace.json`:
+
+```
+droid plugin marketplace add https://github.com/oodle-ai/agent-skills
+droid plugin install oodle-agent-skills@oodle-ai
+```
+
+**Cursor** — reads `.cursor-plugin/marketplace.json`. Cursor onboards marketplaces through the GUI (no CLI add): Dashboard → **Plugins → Team Marketplaces → Add Marketplace → Import from Repo**, then paste `https://github.com/oodle-ai/agent-skills`. Requires the Cursor GitHub App on the repo; enable **Auto Refresh** to pull on push.
+
+> **Codex** ships no separate plugin format — it reuses the Claude Code layout. Install Codex skills with `npx skills` below.
+
+### Every agent: `npx skills`
+
+The [`skills`](https://github.com/obra/skills) installer works across coding agents. Pick your `-a` agent slug (`-g` = global/user-level, `-y` = no prompts):
+
+| Agent | Command |
+|-------|---------|
+| Claude Code | `npx skills add oodle-ai/agent-skills -a claude-code -y -g` |
+| Cursor | `npx skills add oodle-ai/agent-skills -a cursor -y -g` |
+| Codex | `npx skills add oodle-ai/agent-skills -a codex -y -g` |
+| GitHub Copilot | `npx skills add oodle-ai/agent-skills -a copilot -y -g` |
+| Factory.ai (Droid) | `npx skills add oodle-ai/agent-skills -a factory -y -g` |
+| Gemini CLI | `npx skills add oodle-ai/agent-skills -a gemini-cli -y -g` |
+| Windsurf | `npx skills add oodle-ai/agent-skills -a windsurf -y -g` |
+
+Install to several agents at once with a comma-separated list, e.g. `-a claude-code,cursor,codex,copilot,factory`, or `-a '*'` for all supported agents.
+
+Notes on what each agent picks up:
+
+- **Claude Code** installs skills under `~/.claude/skills/` and registers `.claude-plugin/plugin.json`. Prefer the native marketplace above when you want auto-updates.
+- **Cursor** installs into Cursor's rules directory using `.cursor-plugin/plugin.json` for plugin metadata.
+- **Codex / Copilot / Factory.ai** install into each agent's skills/rules directory; they consume the same `SKILL.md` documents.
+- **Gemini CLI** picks up the root `gemini-extension.json` manifest automatically.
+
+### Oodle CLI
 
 The Oodle CLI ships its own skills installer that places every skill in the right location for the AI agent that's currently active in your shell.
 
 ```bash
 oodle skills install
-```
-
-### Claude Code
-
-```bash
-npx skills add oodle-ai/agent-skills -a claude-code -y -g
-```
-
-This installs the skills globally under `~/.claude/skills/` and registers the plugin manifest from `.claude-plugin/plugin.json`.
-
-### Cursor
-
-```bash
-npx skills add oodle-ai/agent-skills -a cursor -y -g
-```
-
-This installs the skills into Cursor's rules directory and uses `.cursor-plugin/plugin.json` for plugin metadata.
-
-### Gemini CLI
-
-```bash
-npx skills add oodle-ai/agent-skills -a gemini-cli -y -g
-```
-
-The `gemini-extension.json` manifest at the repo root is picked up automatically.
-
-### Codex
-
-```bash
-npx skills add oodle-ai/agent-skills -a codex -y -g
-```
-
-### Windsurf
-
-```bash
-npx skills add oodle-ai/agent-skills -a windsurf -y -g
 ```
 
 ### Manual install
