@@ -7,5 +7,6 @@
   "homepage": "https://github.com/oodle-ai/agent-skills",
   "repository": "https://github.com/oodle-ai/agent-skills",
   "license": "MIT",
-  "keywords": ["oodle","observability","monitoring","alerting","metrics","traces","ai-agent","skills"]
+  "keywords": ["oodle","observability","monitoring","alerting","metrics","traces","ai-agent","skills"],
+  "skills": "./skills/"
 }
