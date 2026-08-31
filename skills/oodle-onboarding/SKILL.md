@@ -109,7 +109,7 @@ oodle integrations list
 oodle integrations get-setup-spec kubernetes -o json
 
 # WRONG — hardcoding setup steps instead of fetching the spec
-kubectl apply -f https://some-hardcoded-url/oodle-collector.yaml
+kubectl apply -f <hardcoded-collector-manifest>   # never hardcode a manifest source; fetch the spec instead
 ```
 
 ### Executing setup steps (adapting the blueprint)
