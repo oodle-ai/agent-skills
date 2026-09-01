@@ -96,17 +96,17 @@ A complete dashboard JSON places the dashboard in a known folder:
     {
       "title": "Request rate",
       "type": "timeseries",
-      "query": "sum(rate(http_requests_total{service=\"api\"}[5m]))"
+      "query": "sum(rate(http_requests_total{service=\"api\"}[$__rate_interval]))"
     },
     {
       "title": "Error rate",
       "type": "timeseries",
-      "query": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[5m]))"
+      "query": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[$__rate_interval]))"
     },
     {
       "title": "P99 latency",
       "type": "timeseries",
-      "query": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])))"
+      "query": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[$__rate_interval])))"
     }
   ]
 }
@@ -150,6 +150,44 @@ oodle dashboards delete dash_123 --force
 ```
 
 ## Best Practices
+
+### Never use `$__range` as a panel lookback window
+
+`$__range` expands to the whole dashboard time range, so the window stays that wide at every step and each step re-reads almost the same data as the step before it. A 6h dashboard with a `[$__range]` window reads about 180 times more samples than the same panel with `[$__dd_interval]`, and the multiple grows as the user zooms out — which is when the dashboard times out. Oodle marks such a panel with a warning triangle.
+
+Use a window that scales with the time range: `$__rate_interval` for `rate()` and `increase()` on a graph, `$__dd_interval` for the default Oodle rollup, `$__large_interval` for bar charts and long lookbacks.
+
+```bash
+# ✅ CORRECT — the window shrinks and grows with the dashboard range
+"query": "sum(rate(http_requests_total[$__rate_interval]))"
+
+# ✅ CORRECT — coarser rollup for a bar chart
+"query": "topk(10, sum by (route) (rate(http_request_duration_seconds_sum[$__large_interval])))"
+
+# ❌ WRONG — one flat line at the range average, read 180 times over
+"query": "sum(rate(http_requests_total[$__range]))"
+
+# ❌ WRONG — `$__range_s` is there to undo an `increase`; use `rate` instead
+"query": "sum(increase(http_requests_total[$__range])) / $__range_s"
+```
+
+### Total a stat panel over windows, not over `$__range`
+
+A stat panel that shows one number for the whole range does need every sample, but it does not need to read them in one step. Split the range into windows and add the windows back up.
+
+```bash
+# ✅ CORRECT — window == min step, range query, reduced back to one number
+"query": "sum(increase(http_requests_total[$__dd_interval]))"
+"interval": "$__dd_interval"
+"instant": false
+"transformations": [{"id": "reduce", "options": {"reducers": ["sum"]}}]
+
+# ❌ WRONG — instant query that reads the whole range on every refresh
+"query": "sum(increase(http_requests_total[$__range]))"
+"instant": true
+```
+
+Keep the min step equal to the window, so the windows tile the range: a smaller step double counts samples, a larger one skips them. Match the reducer to the function — `sum` for `increase`, `sum_over_time` and `count_over_time`, `max` for `max_over_time`, `min` for `min_over_time`, `mean` for `avg_over_time`. Do not split `quantile_over_time`, `changes` or `resets` this way; the reduced value is not the value over the range.
 
 ### Always `get` before `update` to preserve panel configuration
 
@@ -219,3 +257,4 @@ Tags make dashboards searchable and let other tools (e.g. service catalogs) link
 
 - [Oodle CLI repo](https://github.com/oodle-ai/oodle-cli)
 - [Oodle docs](https://docs.oodle.ai)
+- [Query optimization — lookback windows and `$__range`](https://docs.oodle.ai/metrics/query-optimization)
