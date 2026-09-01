@@ -155,7 +155,25 @@ oodle dashboards delete dash_123 --force
 
 `$__range` expands to the whole dashboard time range, so the window stays that wide at every step and each step re-reads almost the same data as the step before it. A 6h dashboard with a `[$__range]` window reads about 180 times more samples than the same panel with `[$__dd_interval]`, and the multiple grows as the user zooms out — which is when the dashboard times out. Oodle marks such a panel with a warning triangle.
 
-Use a window that scales with the time range: `$__rate_interval` for `rate()` and `increase()` on a graph, `$__dd_interval` for the default Oodle rollup, `$__large_interval` for bar charts and long lookbacks.
+Use a window that scales with the time range instead:
+
+| Variable | What it is | Use it for |
+|----------|------------|------------|
+| `$__rate_interval` | Grafana's built-in rate window, equal to `max(step + scrape interval, 4 x scrape interval)`, so a rate always has enough samples to be defined. | `rate()` and `increase()` on a graph |
+| `$__dd_interval` | The rollup window Oodle picks for the time range, matching the Datadog default. Capped at 4h. | The default rollup, and stat panel totals |
+| `$__large_interval` | A coarser rollup than `$__dd_interval` for the same range. Capped at 12h. | Bar charts and long lookbacks |
+
+The two Oodle rollups resolve like this:
+
+| Dashboard range | `$__dd_interval` | `$__large_interval` |
+|-----------------|------------------|---------------------|
+| 1 hour | 20s | 1m |
+| 6 hours | 2m | 5m |
+| 24 hours | 5m | 20m |
+| 7 days | 1h | 4h |
+| 30 days | 4h | 12h |
+
+All three grow and shrink with the dashboard time range, so the samples read per step stay about the same however far the user zooms out.
 
 ```bash
 # ✅ CORRECT — the window shrinks and grows with the dashboard range
