@@ -151,6 +151,20 @@ oodle dashboards delete dash_123 --force
 
 ## Best Practices
 
+### Use printable ASCII in dashboard and panel titles
+
+Grafana sends both titles as HTTP headers (`X-Dashboard-Title`, `X-Panel-Title`) with every query a panel runs. The edge proxy blocks a header with non-ASCII bytes, so a title with an emoji, arrow, typographic dash or quote, degree or micro sign, or accented letter breaks every query in that panel. The create succeeds, but the panel shows no data. Put units in `fieldConfig.defaults.unit` and free text in the panel `description`.
+
+```bash
+# ✅ CORRECT
+"title": "CPU temperature (C)"
+"title": "Requests - errors"
+
+# ❌ WRONG — every query in the panel is blocked
+"title": "CPU temperature (°C)"
+"title": "Requests → errors 🚀"
+```
+
 ### Never use `$__range` as a panel lookback window
 
 `$__range` expands to the whole dashboard time range, so the window stays that wide at every step and each step re-reads almost the same data as the step before it. A 6h dashboard with a `[$__range]` window reads about 180 times more samples than the same panel with `[$__dd_interval]`, and the multiple grows as the user zooms out — which is when the dashboard times out. Oodle marks such a panel with a warning triangle.
@@ -267,6 +281,7 @@ Tags make dashboards searchable and let other tools (e.g. service catalogs) link
 | 404 Not Found | Dashboard or folder ID does not exist | Verify with `oodle dashboards list -o json` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
 | `folder not found` | `folderId` references a deleted folder | List folders with `oodle folders list -o json`; choose an existing id or create one |
+| Panel shows no data, queries blocked with a 4xx from the edge | Dashboard or panel title has a non-ASCII character | Rewrite the title in printable ASCII; move units to `fieldConfig.defaults.unit` |
 | Panels disappeared after update | `update` was called with a partial payload | Re-create from the last `get` snapshot; in the future always `get` → edit → `update` |
 | Cannot delete folder | Folder still contains dashboards | Move or delete the dashboards first; `oodle dashboards list -o json | jq '.[] | select(.folderId=="fld_x")'` |
 | 429 Too Many Requests | Bulk dashboard sync | Add `--retries 3`, throttle to <10 creates per second |
