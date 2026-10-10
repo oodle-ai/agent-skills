@@ -13,16 +13,16 @@ These skills are designed so that an AI assistant can:
 | Skill | Description |
 |-------|-------------|
 | [oodle-cli](skills/oodle-cli/SKILL.md) | Core CLI usage — auth, output formats, time flags, file input, common patterns |
-| [oodle-monitors](skills/oodle-monitors/SKILL.md) | Monitor CRUD, alerting thresholds, query scoping, runbook links |
+| [oodle-monitors](skills/oodle-monitors/SKILL.md) | Monitor CRUD, PromQL conditions, query scoping, alerting on logs and traces through metrics |
 | [oodle-dashboards](skills/oodle-dashboards/SKILL.md) | Dashboard and folder management with safe-update / safe-delete patterns |
 | [oodle-alerting](skills/oodle-alerting/SKILL.md) | Notifiers, notification policies, muting rules |
 | [oodle-metrics](skills/oodle-metrics/SKILL.md) | Metric queries, label discovery, PromQL building |
-| [oodle-traces](skills/oodle-traces/SKILL.md) | Trace search by service, operation, duration, error |
-| [oodle-log-metrics](skills/oodle-log-metrics/SKILL.md) | Log-based metric rules — filters and groupBy |
+| [oodle-traces](skills/oodle-traces/SKILL.md) | Trace search, TraceQL search and metrics, alerting on span metrics (`oodle_trace_metrics`, `oodle_genai_*`) |
+| [oodle-log-metrics](skills/oodle-log-metrics/SKILL.md) | Log metrics rules — filters, regex-extracted labels and values, log alerts |
 | [oodle-synthetic](skills/oodle-synthetic/SKILL.md) | HTTP/TCP synthetic monitors with assertions |
 | [oodle-metrics-query](skills/oodle-metrics-query/SKILL.md) | PromQL instant and range queries |
-| [oodle-logs](skills/oodle-logs/SKILL.md) | Log search and index pattern discovery |
-| [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop / sample rules for ingestion cost control |
+| [oodle-logs](skills/oodle-logs/SKILL.md) | Log search, aggregations, and index pattern discovery |
+| [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop rules for ingestion cost control |
 | [oodle-onboarding](skills/oodle-onboarding/SKILL.md) | Integration onboarding — list integrations, fetch setup specs, execute step-by-step installation |
 | [oodle-o11y-context](skills/oodle-o11y-context/SKILL.md) | Change-context manifest — the PR block that carries a change's observability intent across the SDLC |
 | [oodle-o11y-review](skills/oodle-o11y-review/SKILL.md) | Left-side telemetry review — business context, cardinality, duplication, RED/USE/fan-out, alert-driven scrutiny |
@@ -117,16 +117,19 @@ cp -r agent-skills/skills/* ~/.<agent>/skills/
 | List notifiers | `oodle notifiers list -o json` |
 | List notification policies | `oodle notification-policies list -o json` |
 | List muting rules | `oodle muting-rules list -o json` |
-| Search metrics | `oodle metrics list --match "http_requests"` |
+| List metric names | `oodle metrics names -o json` |
 | List metric labels | `oodle metrics labels http_requests_total` |
 | List label values | `oodle metrics label-values http_requests_total service` |
 | Instant PromQL query | `oodle metrics query --query "sum(up)" -o json` |
 | Range PromQL query | `oodle metrics query-range --query "up" --start -1h --end now --step 60s -o json` |
 | List log index patterns | `oodle logs index-patterns -o json` |
 | Search logs | `oodle logs query -f query.ndjson -o json` |
-| Search traces | `oodle traces list --service api --from -1h` |
-| Get trace | `oodle traces get <trace-id> -o json` |
+| Search traces | `oodle traces list --service api --start -1h --end now -o json` |
+| Get trace | `oodle traces get <trace-id> --start -1h --end now -o json` |
+| TraceQL search | `oodle traces traceql search '{ status = error }' --start -1h --end now` |
+| TraceQL metrics | `oodle traces traceql metrics '{ status = error } \| rate() by (resource.service.name)' --start -1h --end now --step 1m` |
 | List log metrics | `oodle log-metrics list -o json` |
+| Create log metrics rule | `oodle log-metrics create -f rule.json` |
 | List synthetic monitors | `oodle synthetic-monitors list -o json` |
 | List drop rules | `oodle drop-rules list -o json` |
 | List integrations | `oodle integrations list -o json` |
@@ -134,16 +137,17 @@ cp -r agent-skills/skills/* ~/.<agent>/skills/
 
 ## Authoring Conventions
 
-Every skill in this repo follows the same canonical structure:
+Every skill in this repo follows the same structure:
 
 1. YAML frontmatter (name, description, metadata)
-2. Prerequisites
-3. Command Execution Order
-4. Quick Reference table
-5. Common Operations with `✅ CORRECT` / `❌ WRONG` examples
-6. Best Practices with prescriptive, testable rules
-7. Failure Handling table
-8. References
+2. A one-line pointer to the `oodle-cli` skill, which holds the setup, auth, time flags, the rules for every resource (get before update, safe delete), and the common errors. Other skills do not repeat them.
+3. Quick Reference table or workflow
+4. Schemas and operations, with `✅ CORRECT` / `❌ WRONG` examples only where a mistake is likely
+5. Best Practices with prescriptive, testable rules
+6. Failure Handling table with only the errors of that resource
+7. References
+
+Skills are loaded into the agent context, so keep each fact in one skill and point to it from the others.
 
 Rules in the skills are written prescriptively (`Run X` rather than `You can run X`) so that the agent treats them as hard constraints rather than suggestions.
 

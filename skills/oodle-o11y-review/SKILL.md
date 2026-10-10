@@ -2,7 +2,7 @@
 name: oodle-o11y-review
 description: Reviews a code change's telemetry during authoring or code review — checks business-context attributes and cardinality placement, telemetry duplication, RED/USE/queue/fan-out coverage, and alert-driven scrutiny of code guarded by existing alerts and SLOs. Writes findings into the O11y Change Context manifest and hands fixes off to oodle-monitors, oodle-drop-rules, and oodle-log-metrics. Use when reviewing or authoring instrumentation changes.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,observability,code-review,instrumentation,cardinality,slo
@@ -123,7 +123,7 @@ recommend the author confirm them manually.
   [O11y Change Context](../oodle-o11y-context/SKILL.md) contract.
 - **Hand off concrete fixes** rather than re-teaching them:
   - add or tune a guarding monitor → [oodle-monitors](../oodle-monitors/SKILL.md)
-  - drop or sample a high-cardinality / high-volume metric → [oodle-drop-rules](../oodle-drop-rules/SKILL.md)
+  - drop a high-cardinality / high-volume metric → [oodle-drop-rules](../oodle-drop-rules/SKILL.md)
   - derive a metric from logs → [oodle-log-metrics](../oodle-log-metrics/SKILL.md)
 - Say **what** to change and **why** it matters. The agent already knows **how**
   to write the instrumentation.
