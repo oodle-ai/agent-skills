@@ -2,7 +2,7 @@
 name: oodle-dashboards
 description: Create, update, and manage Oodle dashboards and folders — safe deletion, panel preservation, and folder organization.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,dashboards,visualization
@@ -46,14 +46,13 @@ Before running any oodle command:
 | Task | Command |
 |------|---------|
 | List dashboards | `oodle dashboards list -o json` |
-| Get dashboard | `oodle dashboards get <id> -o json` |
-| Create dashboard | `oodle dashboards create -f dashboard.json` |
-| Update dashboard | `oodle dashboards update <id> -f dashboard.json` |
-| Delete dashboard | `oodle dashboards delete <id> --force` |
+| Get dashboard | `oodle dashboards get <uid> -o json` |
+| Create dashboard | `oodle dashboards create -f save.json` |
+| Update dashboard | `oodle dashboards create -f save.json` with `"overwrite": true` (there is no `dashboards update`) |
+| Delete dashboard | `oodle dashboards delete <uid> --force` |
 | List folders | `oodle folders list -o json` |
-| Get folder | `oodle folders get <id> -o json` |
-| Create folder | `oodle folders create -f folder.json` |
-| Delete folder | `oodle folders delete <id> --force` |
+| Create folder | `oodle folders create --title "Platform" -o json` |
+| Delete folder | No CLI command; use the Oodle UI |
 
 ## Common Operations
 
@@ -63,8 +62,8 @@ Before running any oodle command:
 # ✅ CORRECT
 oodle dashboards list -o json
 
-# ✅ CORRECT — filter by folder
-oodle dashboards list -o json | jq '.[] | select(.folderId=="fld_platform")'
+# ✅ CORRECT — filter by folder (the list also has folders, with `type` "dash-folder")
+oodle dashboards list -o json | jq '.[] | select(.type=="dash-db" and .folderUid=="platform")'
 
 # ❌ WRONG — parsing table output to find an ID
 oodle dashboards list | grep "API Overview" | awk '{print $1}'
@@ -74,63 +73,67 @@ oodle dashboards list | grep "API Overview" | awk '{print $1}'
 
 ```bash
 # ✅ CORRECT — fetch the full definition first; preserves all panels and queries
-oodle dashboards get dash_123 -o json > dashboard.json
-$EDITOR dashboard.json
-oodle dashboards update dash_123 -f dashboard.json
+oodle dashboards get dash_123 -o json > current.json
+jq '{dashboard: .dashboard, folderUid: .meta.folderUid, overwrite: true}' current.json > save.json
+$EDITOR save.json
+oodle dashboards create -f save.json
 
 # ❌ WRONG — sending an incomplete payload removes panels
-oodle dashboards update dash_123 -f <(echo '{"title":"new title"}')
+oodle dashboards create -f <(echo '{"dashboard":{"uid":"dash_123","title":"new title"},"overwrite":true}')
 ```
 
 ### Creating a dashboard
 
-A complete dashboard JSON places the dashboard in a known folder:
+`oodle dashboards create -f` takes a save request: Grafana dashboard JSON in `dashboard`, plus `folderUid` and `overwrite`. A panel keeps its PromQL in `targets[].expr`. A complete save request places the dashboard in a known folder:
 
 ```json
 {
-  "title": "API Overview",
-  "folderId": "fld_platform",
-  "description": "Latency, error rate, and throughput for the API service.",
-  "tags": ["service:api", "team:platform"],
-  "panels": [
-    {
-      "title": "Request rate",
-      "type": "timeseries",
-      "query": "sum(rate(http_requests_total{service=\"api\"}[$__rate_interval]))"
-    },
-    {
-      "title": "Error rate",
-      "type": "timeseries",
-      "query": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[$__rate_interval]))"
-    },
-    {
-      "title": "P99 latency",
-      "type": "timeseries",
-      "query": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[$__rate_interval])))"
-    }
-  ]
+  "dashboard": {
+    "title": "API Overview",
+    "description": "Latency, error rate, and throughput for the API service.",
+    "tags": ["service:api", "team:platform"],
+    "panels": [
+      {
+        "title": "Request rate",
+        "type": "timeseries",
+        "targets": [{"refId": "A", "expr": "sum(rate(http_requests_total{service=\"api\"}[$__rate_interval]))"}]
+      },
+      {
+        "title": "Error rate",
+        "type": "timeseries",
+        "targets": [{"refId": "A", "expr": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[$__rate_interval]))"}]
+      },
+      {
+        "title": "P99 latency",
+        "type": "timeseries",
+        "targets": [{"refId": "A", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[$__rate_interval])))"}]
+      }
+    ]
+  },
+  "folderUid": "platform",
+  "overwrite": false
 }
 ```
 
 ```bash
 # ✅ CORRECT
-oodle dashboards create -f dashboard.json
+oodle dashboards create -f save.json
 
-# ❌ WRONG — no folderId, dashboard ends up in root and is hard to find
-oodle dashboards create -f <(echo '{"title":"API Overview","panels":[...]}')
+# ❌ WRONG — no folderUid, dashboard ends up in root and is hard to find
+oodle dashboards create -f <(echo '{"dashboard":{"title":"API Overview","panels":[...]}}')
 ```
 
 ### Folder management
 
 ```bash
 # ✅ CORRECT — create folder first, capture id, then create dashboards in it
-FOLDER_ID=$(oodle folders create -f <(echo '{"title":"Platform"}') -o json | jq -r '.id')
-jq --arg fid "$FOLDER_ID" '.folderId=$fid' dashboard.json > dashboard.with-folder.json
-oodle dashboards create -f dashboard.with-folder.json
+FOLDER_UID=$(oodle folders create --title "Platform" -o json | jq -r '.uid')
+jq --arg f "$FOLDER_UID" '.folderUid=$f' save.json > save.with-folder.json
+oodle dashboards create -f save.with-folder.json
 
 # ❌ WRONG — creating dashboards before folders, then trying to move them later
-oodle dashboards create -f dashboard.json
-oodle folders create -f folder.json
+oodle dashboards create -f save.json
+oodle folders create --title "Platform"
 ```
 
 ### Safe deletion — two-phase
@@ -140,8 +143,8 @@ Dashboards are linked from runbooks, slack messages, and bookmarks. Delete in tw
 ```bash
 # ✅ CORRECT — phase 1: rename so users see it's about to be removed
 oodle dashboards get dash_123 -o json > dash.json
-jq '.title = "[MARKED FOR DELETION] " + .title' dash.json > dash.deletion.json
-oodle dashboards update dash_123 -f dash.deletion.json
+jq '{dashboard: (.dashboard | .title = "[MARKED FOR DELETION] " + .title), folderUid: .meta.folderUid, overwrite: true}' dash.json > dash.deletion.json
+oodle dashboards create -f dash.deletion.json
 # wait at least 7 days, then:
 oodle dashboards delete dash_123 --force
 
@@ -177,16 +180,16 @@ All three grow and shrink with the dashboard time range, so the samples read per
 
 ```bash
 # ✅ CORRECT — the window shrinks and grows with the dashboard range
-"query": "sum(rate(http_requests_total[$__rate_interval]))"
+"expr": "sum(rate(http_requests_total[$__rate_interval]))"
 
 # ✅ CORRECT — coarser rollup for a bar chart
-"query": "topk(10, sum by (route) (rate(http_request_duration_seconds_sum[$__large_interval])))"
+"expr": "topk(10, sum by (route) (rate(http_request_duration_seconds_sum[$__large_interval])))"
 
 # ❌ WRONG — one flat line at the range average, read 180 times over
-"query": "sum(rate(http_requests_total[$__range]))"
+"expr": "sum(rate(http_requests_total[$__range]))"
 
 # ❌ WRONG — `$__range_s` is there to undo an `increase`; use `rate` instead
-"query": "sum(increase(http_requests_total[$__range])) / $__range_s"
+"expr": "sum(increase(http_requests_total[$__range])) / $__range_s"
 ```
 
 ### Total a stat panel over windows, not over `$__range`
@@ -195,13 +198,13 @@ A stat panel that shows one number for the whole range does need every sample, b
 
 ```bash
 # ✅ CORRECT — window == min step, range query, reduced back to one number
-"query": "sum(increase(http_requests_total[$__dd_interval]))"
+"expr": "sum(increase(http_requests_total[$__dd_interval]))"
 "interval": "$__dd_interval"
 "instant": false
 "transformations": [{"id": "reduce", "options": {"reducers": ["sum"]}}]
 
 # ❌ WRONG — instant query that reads the whole range on every refresh
-"query": "sum(increase(http_requests_total[$__range]))"
+"expr": "sum(increase(http_requests_total[$__range]))"
 "instant": true
 ```
 
@@ -209,28 +212,28 @@ Keep the min step equal to the window, so the windows tile the range: a smaller 
 
 ### Always `get` before `update` to preserve panel configuration
 
-Update is a full-document replace. Missing panels in the payload will be removed.
+A save with `"overwrite": true` is a full-document replace. Missing panels in the payload will be removed.
 
 ```bash
 # ✅ CORRECT
 oodle dashboards get dash_123 -o json > dash.json
-jq '.panels[0].title = "Request rate (per second)"' dash.json > dash.new.json
-oodle dashboards update dash_123 -f dash.new.json
+jq '{dashboard: (.dashboard | .panels[0].title = "Request rate (per second)"), folderUid: .meta.folderUid, overwrite: true}' dash.json > dash.new.json
+oodle dashboards create -f dash.new.json
 
 # ❌ WRONG — sends a single-field payload; all panels disappear
-oodle dashboards update dash_123 -f <(echo '{"description":"updated"}')
+oodle dashboards create -f <(echo '{"dashboard":{"uid":"dash_123","description":"updated"},"overwrite":true}')
 ```
 
-### Always set `folderId` when creating a dashboard
+### Always set `folderUid` when creating a dashboard
 
 Dashboards in the root folder are hard for teams to discover.
 
 ```bash
 # ✅ CORRECT
-"folderId": "fld_platform"
+"folderUid": "platform"
 
-# ❌ WRONG — omitting folderId means root
-"folderId": null
+# ❌ WRONG — omitting folderUid means root
+"folderUid": null
 ```
 
 ### Use the two-phase rename → wait → delete pattern for shared dashboards
@@ -239,7 +242,7 @@ Hard-deleting a dashboard breaks every external link (runbooks, slack reactions,
 
 ```bash
 # ✅ CORRECT — phase 1: rename
-oodle dashboards update dash_123 -f dash.deletion.json
+oodle dashboards create -f dash.deletion.json
 # wait, confirm no traffic, then phase 2: delete
 oodle dashboards delete dash_123 --force
 
@@ -266,9 +269,9 @@ Tags make dashboards searchable and let other tools (e.g. service catalogs) link
 | 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
 | 404 Not Found | Dashboard or folder ID does not exist | Verify with `oodle dashboards list -o json` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
-| `folder not found` | `folderId` references a deleted folder | List folders with `oodle folders list -o json`; choose an existing id or create one |
-| Panels disappeared after update | `update` was called with a partial payload | Re-create from the last `get` snapshot; in the future always `get` → edit → `update` |
-| Cannot delete folder | Folder still contains dashboards | Move or delete the dashboards first; `oodle dashboards list -o json | jq '.[] | select(.folderId=="fld_x")'` |
+| `folder not found` | `folderUid` references a deleted folder | List folders with `oodle folders list -o json`; choose an existing id or create one |
+| Panels disappeared after update | A save with `"overwrite": true` had a partial payload | Re-create from the last `get` snapshot; in the future always `get` → edit → save |
+| Cannot delete folder | Folder still contains dashboards, and the CLI has no `folders delete` | Move or delete the dashboards first (`oodle dashboards list -o json | jq '.[] | select(.folderUid=="fld_x")'`), then delete the folder in the Oodle UI |
 | 429 Too Many Requests | Bulk dashboard sync | Add `--retries 3`, throttle to <10 creates per second |
 
 ## References

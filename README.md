@@ -17,12 +17,12 @@ These skills are designed so that an AI assistant can:
 | [oodle-dashboards](skills/oodle-dashboards/SKILL.md) | Dashboard and folder management with safe-update / safe-delete patterns |
 | [oodle-alerting](skills/oodle-alerting/SKILL.md) | Notifiers, notification policies, muting rules |
 | [oodle-metrics](skills/oodle-metrics/SKILL.md) | Metric queries, label discovery, PromQL building |
-| [oodle-traces](skills/oodle-traces/SKILL.md) | Trace search by service, operation, duration, error |
-| [oodle-log-metrics](skills/oodle-log-metrics/SKILL.md) | Log-based metric rules — filters and groupBy |
+| [oodle-traces](skills/oodle-traces/SKILL.md) | Trace search by service, operation, duration, error; TraceQL search and metrics |
+| [oodle-log-metrics](skills/oodle-log-metrics/SKILL.md) | Log-based metric rules — filters and labels |
 | [oodle-synthetic](skills/oodle-synthetic/SKILL.md) | HTTP/TCP synthetic monitors with assertions |
 | [oodle-metrics-query](skills/oodle-metrics-query/SKILL.md) | PromQL instant and range queries |
-| [oodle-logs](skills/oodle-logs/SKILL.md) | Log search and index pattern discovery |
-| [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop / sample rules for ingestion cost control |
+| [oodle-logs](skills/oodle-logs/SKILL.md) | Log search, aggregations, and index pattern discovery |
+| [oodle-drop-rules](skills/oodle-drop-rules/SKILL.md) | Metric drop rules for ingestion cost control |
 | [oodle-onboarding](skills/oodle-onboarding/SKILL.md) | Integration onboarding — list integrations, fetch setup specs, execute step-by-step installation |
 | [oodle-o11y-context](skills/oodle-o11y-context/SKILL.md) | Change-context manifest — the PR block that carries a change's observability intent across the SDLC |
 | [oodle-o11y-review](skills/oodle-o11y-review/SKILL.md) | Left-side telemetry review — business context, cardinality, duplication, RED/USE/fan-out, alert-driven scrutiny |
@@ -117,15 +117,17 @@ cp -r agent-skills/skills/* ~/.<agent>/skills/
 | List notifiers | `oodle notifiers list -o json` |
 | List notification policies | `oodle notification-policies list -o json` |
 | List muting rules | `oodle muting-rules list -o json` |
-| Search metrics | `oodle metrics list --match "http_requests"` |
+| List metric names | `oodle metrics names -o json` |
 | List metric labels | `oodle metrics labels http_requests_total` |
 | List label values | `oodle metrics label-values http_requests_total service` |
 | Instant PromQL query | `oodle metrics query --query "sum(up)" -o json` |
 | Range PromQL query | `oodle metrics query-range --query "up" --start -1h --end now --step 60s -o json` |
 | List log index patterns | `oodle logs index-patterns -o json` |
 | Search logs | `oodle logs query -f query.ndjson -o json` |
-| Search traces | `oodle traces list --service api --from -1h` |
-| Get trace | `oodle traces get <trace-id> -o json` |
+| Search traces | `oodle traces list --service api --start -1h --end now -o json` |
+| Get trace | `oodle traces get <trace-id> --start -1h --end now -o json` |
+| TraceQL search | `oodle traces traceql search '{ status = error }' --start -1h --end now` |
+| TraceQL metrics | `oodle traces traceql metrics '{ status = error } \| rate() by (resource.service.name)' --start -1h --end now --step 1m` |
 | List log metrics | `oodle log-metrics list -o json` |
 | List synthetic monitors | `oodle synthetic-monitors list -o json` |
 | List drop rules | `oodle drop-rules list -o json` |

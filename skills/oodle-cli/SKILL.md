@@ -2,7 +2,7 @@
 name: oodle-cli
 description: Core Oodle CLI usage — auth, output formats, time flags, file input, and common patterns for all oodle commands.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,cli,observability
@@ -22,8 +22,8 @@ Install the CLI before running any other command in this repo:
 # Install via Homebrew (macOS / Linux)
 brew install oodle-ai/oodle/oodle
 
-# Or via Go (any platform with Go 1.21+)
-go install github.com/oodle-ai/oodle-cli@latest
+# Or via Go (any platform with Go 1.25+)
+go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest
 
 # Configure auth (interactive — writes ~/.oodle/config.yaml)
 oodle configure
@@ -66,9 +66,10 @@ Before running any oodle command:
 | `oodle logs query` | Search logs using OpenSearch Query DSL |
 | `oodle metrics` | Query metric names, labels, label values |
 | `oodle traces` | Search and fetch traces |
+| `oodle traces traceql search` / `metrics` | Find traces, or compute rates, counts, and quantiles, with TraceQL (see the oodle-traces skill) |
 | `oodle log-metrics` | Manage log-derived metric rules |
 | `oodle synthetic-monitors` | Manage HTTP/TCP synthetic checks |
-| `oodle drop-rules` | Manage metric drop / sample rules |
+| `oodle drop-rules` | Manage metric drop rules |
 | `oodle api-keys` | Manage API keys |
 | `oodle users` | Manage users |
 | `oodle configure` | Interactive auth setup |
@@ -91,7 +92,7 @@ oodle monitors list -o table
 oodle monitors get mon_123 -o yaml > monitor.yaml
 
 # ✅ CORRECT — csv for spreadsheets / quick grep
-oodle metrics list --match http_ -o csv
+oodle metrics names -o csv
 
 # ❌ WRONG — parsing the default table format with awk/grep is fragile
 oodle monitors list | awk '{print $1}'
@@ -119,23 +120,26 @@ until oodle monitors list -o json; do sleep 5; done
 
 ### Time flags
 
-`--from` and `--to` accept three formats:
+`--start`, `--end`, and `--time` accept these formats (there is no `--from` or `--to` flag):
 
 | Format | Example | Meaning |
 |--------|---------|---------|
-| Epoch seconds | `1731628800` | absolute unix timestamp |
+| Epoch seconds | `1731628800` | absolute unix timestamp (ms, µs, and ns are also accepted) |
+| RFC 3339 | `2026-10-07T10:00:00Z` | absolute time |
 | `now` | `now` | current server time |
 | Relative duration | `-1h`, `-30m`, `-7d` | now minus the duration |
 
+Most commands default to `--start -1h --end now`. `oodle traces list` and `oodle traces get` require both flags.
+
 ```bash
 # ✅ CORRECT — relative duration is timezone-safe and readable
-oodle traces list --service api --from -1h --to now -o json
+oodle traces list --service api --start -1h --end now -o json
 
 # ✅ CORRECT — epoch when the caller has an exact timestamp
-oodle traces list --service api --from 1731628800 --to 1731632400 -o json
+oodle traces list --service api --start 1731628800 --end 1731632400 -o json
 
 # ❌ WRONG — human strings are not parsed
-oodle traces list --service api --from "1 hour ago"
+oodle traces list --service api --start "1 hour ago" --end now
 ```
 
 ### File input (`-f`)

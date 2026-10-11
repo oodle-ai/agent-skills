@@ -1,8 +1,8 @@
 ---
 name: oodle-drop-rules
-description: Create and manage Oodle metric drop rules — reduce ingestion cost by dropping or sampling high-volume, low-value metrics.
+description: Create and manage Oodle metric drop rules — reduce ingestion cost by dropping high-volume, low-value metrics.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,drop-rules,cost,metrics
@@ -12,7 +12,7 @@ metadata:
 
 # Oodle Drop Rules — Cost Control
 
-This skill teaches the agent to drop or sample high-volume metrics safely: estimate the impact first, prefer sampling over dropping, and never silently delete a metric a dashboard depends on.
+This skill teaches the agent to drop high-volume metrics safely: estimate the impact first, start with a narrow rule, and never silently delete a metric a dashboard depends on. There is no sampling mode: a rule drops every series that it matches, and dropped data cannot be recovered.
 
 ## Prerequisites
 
@@ -31,11 +31,9 @@ oodle drop-rules list -o json | jq 'length'
 
 Before running any oodle command:
 1. Check whether the target metric prefix and matchers are already in context.
-2. If not, run `oodle metrics list --match <prefix> -o json | jq 'length'` to estimate impact.
-3. Confirm no critical dashboards or monitors depend on the affected series:
-   - `oodle dashboards list -o json | jq '.[] | select(.panels[]?.query | contains("<metric>"))'`
-   - `oodle monitors list -o json | jq '.[] | select(.query | contains("<metric>"))'`
-4. Prefer `action: sample` (e.g. `sampleRate: 0.1`) on the first attempt; switch to `action: drop` only after the sampled data confirms low value.
+2. If not, run `oodle metrics query --query 'count({__name__=~"<prefix>.*"})' -o json` to estimate impact.
+3. Confirm no critical dashboards or monitors depend on the affected series (see "Estimating impact before creating a rule").
+4. Start with a narrow rule (one metric, one non-production `env`) on the first attempt; widen the `filters` only after the dashboards and monitors of that env show no regression.
 5. Run `oodle drop-rules create -f rule.json`.
 
 ## Quick Reference
@@ -54,67 +52,71 @@ Before running any oodle command:
 
 ```json
 {
-  "name": "drop-noisy-debug-metrics",
-  "matchers": [
-    {"name": "level", "value": "debug"},
-    {"name": "env",   "value": "staging"}
+  "rule_name": "drop-noisy-debug-metrics",
+  "metric_name": {"type": 2, "name": "__name__", "value": "debug_.*"},
+  "filters": [
+    {"type": 0, "name": "level", "value": "debug"},
+    {"type": 0, "name": "env",   "value": "staging"}
   ],
-  "action": "drop",
-  "sampleRate": null
+  "type": "series"
 }
 ```
 
 | Field | Meaning |
 |-------|---------|
-| `matchers` | All matchers must match for the rule to fire (logical AND) |
-| `action` | `drop` (discard) or `sample` (keep a fraction) |
-| `sampleRate` | Required when `action="sample"`; float in `(0,1]`. `null` for `drop` |
+| `rule_name` | Required. Name of the rule |
+| `metric_name` | Matcher on the metric name (`"name": "__name__"`) |
+| `filters` | Label matchers. All must match for the rule to fire (logical AND) |
+| `type` | Required. Must be `"series"` |
+
+Matcher `type`: `0` equals, `1` not equals, `2` regex match, `3` regex not match.
 
 ### Estimating impact before creating a rule
 
 ```bash
 # ✅ CORRECT — count series that will be affected
-oodle metrics list --match "debug_" -o json | jq 'length'
+oodle metrics query --query 'count({__name__=~"debug_.*"})' -o json
 
-# ✅ CORRECT — confirm no dashboard panel queries the metric
-oodle dashboards list -o json | jq '.[] | select(.panels[]?.query | contains("debug_traffic_total"))'
+# ✅ CORRECT — confirm no dashboard panel queries the metric (list has no panels; get each dashboard)
+for uid in $(oodle dashboards list -o json | jq -r '.[].uid'); do
+  oodle dashboards get "$uid" -o json | grep -q 'debug_traffic_total' && echo "$uid"
+done
 
 # ✅ CORRECT — confirm no monitor depends on it
-oodle monitors list -o json | jq '.[] | select(.query | contains("debug_traffic_total"))'
+oodle monitors list -o json | jq '.[] | select(.promql_query | contains("debug_traffic_total"))'
 
 # ❌ WRONG — create the rule first, find out from on-call later
 oodle drop-rules create -f rule.json
 ```
 
-### Creating a `sample` rule (safer first step)
+### Creating a narrow rule (safer first step)
 
 ```json
 {
-  "name": "sample-debug-metrics-staging",
-  "matchers": [
-    {"name": "__name__", "value": "debug_traffic_total"},
-    {"name": "env",      "value": "staging"}
+  "rule_name": "drop-debug-traffic-staging",
+  "metric_name": {"type": 0, "name": "__name__", "value": "debug_traffic_total"},
+  "filters": [
+    {"type": 0, "name": "env", "value": "staging"}
   ],
-  "action": "sample",
-  "sampleRate": 0.1
+  "type": "series"
 }
 ```
 
 ```bash
-# ✅ CORRECT — keep 10% of the series; observe for a week before dropping
+# ✅ CORRECT — one metric in staging; observe for a week before widening
 oodle drop-rules create -f rule.json
 ```
 
-### Promoting a `sample` rule to `drop`
+### Widening a rule
 
 ```bash
-# ✅ CORRECT — get → switch action → update
+# ✅ CORRECT — get → change filters → update
 oodle drop-rules get dr_123 -o json > rule.json
-jq '.action = "drop" | .sampleRate = null' rule.json > rule.new.json
+jq '.filters = [{"type": 2, "name": "env", "value": "staging|dev"}]' rule.json > rule.new.json
 oodle drop-rules update dr_123 -f rule.new.json
 
-# ❌ WRONG — partial payload nulls matchers
-oodle drop-rules update dr_123 -f <(echo '{"action":"drop"}')
+# ❌ WRONG — partial payload nulls metric_name and filters
+oodle drop-rules update dr_123 -f <(echo '{"filters":[]}')
 ```
 
 ### Deleting (re-enabling ingestion)
@@ -130,43 +132,42 @@ oodle drop-rules delete "$(oodle drop-rules list | grep debug | awk '{print $1}'
 
 ## Best Practices
 
-### Estimate impact with `oodle metrics list --match <prefix> -o json | jq 'length'` before creating a rule
+### Estimate impact with `oodle metrics query --query 'count({__name__=~"<prefix>.*"})'` before creating a rule
 
 A drop rule that matches more series than expected can hide real signal.
 
 ```bash
 # ✅ CORRECT
-oodle metrics list --match "kube_pod_" -o json | jq 'length'
+oodle metrics query --query 'count({__name__=~"kube_pod_.*"})' -o json | jq -r '.data.result[0].value[1]'
 # 1742 series — confirm with the team that all 1742 are safe to drop before creating a rule
 
 # ❌ WRONG — create rule based on a guess; later discover a critical metric was matched
 oodle drop-rules create -f rule.json
 ```
 
-### Prefer `action: sample` with `sampleRate: 0.1` on the first iteration
+### Start with a narrow rule in a non-production env on the first iteration
 
-Sampling preserves enough signal to confirm the metric truly is low-value before fully dropping it.
+There is no sampling mode. A narrow first rule shows that the metric truly is low-value before you drop it everywhere.
 
 ```bash
-# ✅ CORRECT — week 1: sample at 10%, observe dashboards
-"action": "sample", "sampleRate": 0.1
-# week 2: if no dashboards or monitors regressed, switch to drop
-"action": "drop", "sampleRate": null
+# ✅ CORRECT — week 1: drop in staging only, observe dashboards
+"filters": [{"type": 0, "name": "env", "value": "staging"}]
+# week 2: if no dashboards or monitors regressed, widen the filters
 
-# ❌ WRONG — drop on first attempt; can break a dashboard nobody remembered
-"action": "drop"
+# ❌ WRONG — drop everywhere on first attempt; can break a dashboard nobody remembered
+"filters": []
 ```
 
-### Always include both `env` and `service` (or `__name__`) in matchers
+### Always include both `env` and `service` (or an exact `metric_name`) in matchers
 
 Broad matchers like `{level: debug}` alone can match production metrics that happen to share a label.
 
 ```bash
 # ✅ CORRECT — scoped to one env
-"matchers": [{"name":"level","value":"debug"},{"name":"env","value":"staging"}]
+"filters": [{"type":0,"name":"level","value":"debug"},{"type":0,"name":"env","value":"staging"}]
 
 # ❌ WRONG — also drops debug metrics in prod
-"matchers": [{"name":"level","value":"debug"}]
+"filters": [{"type":0,"name":"level","value":"debug"}]
 ```
 
 ### Always `get` before `update` to preserve fields
@@ -176,24 +177,24 @@ Update is a full-document replace.
 ```bash
 # ✅ CORRECT
 oodle drop-rules get dr_123 -o json > rule.json
-jq '.sampleRate = 0.05' rule.json > rule.new.json
+jq '.filters += [{"type": 0, "name": "service", "value": "api"}]' rule.json > rule.new.json
 oodle drop-rules update dr_123 -f rule.new.json
 
-# ❌ WRONG — drops matchers and action
-oodle drop-rules update dr_123 -f <(echo '{"sampleRate":0.05}')
+# ❌ WRONG — drops metric_name and type
+oodle drop-rules update dr_123 -f <(echo '{"filters":[{"type":0,"name":"service","value":"api"}]}')
 ```
 
-### Name rules with `<action>-<metric-or-domain>-<scope>`
+### Name rules with `drop-<metric-or-domain>-<scope>`
 
 Predictable names make it easy to find and revert a rule when a dashboard breaks.
 
 ```bash
 # ✅ CORRECT
-"name": "drop-debug-metrics-staging"
-"name": "sample-kube-pod-info-prod"
+"rule_name": "drop-debug-metrics-staging"
+"rule_name": "drop-kube-pod-info-prod"
 
 # ❌ WRONG
-"name": "rule1"
+"rule_name": "rule1"
 ```
 
 ## Failure Handling
@@ -203,10 +204,11 @@ Predictable names make it easy to find and revert a rule when a dashboard breaks
 | 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
 | 404 Not Found | Drop rule ID does not exist | Verify with `oodle drop-rules list -o json` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
-| `sampleRate required` | `action: sample` without `sampleRate` | Add `sampleRate` between 0 and 1 (e.g. 0.1) |
+| `rule_name cannot be empty` | Missing `rule_name` | Add `rule_name` |
+| `type cannot be empty` / `invalid type "...", must be "series"` | `type` is missing or wrong | Set `"type": "series"` |
 | Dashboard panel suddenly empty | Drop rule matched a metric the panel queries | Run `oodle drop-rules list -o json` to find the rule; delete it (`oodle drop-rules delete <id> --force`) or narrow its matchers |
-| Monitor went into `no data` | Drop rule matched the monitor's metric | Same fix as above; alternatively switch the rule from `drop` to `sample` |
-| Cost did not decrease | Matchers don't actually match the high-volume series | Re-run `oodle metrics list --match ...` and compare label sets to the rule's matchers |
+| Monitor went into `no data` | Drop rule matched the monitor's metric | Same fix as above |
+| Cost did not decrease | Matchers don't actually match the high-volume series | Re-run the `count(...)` query with the rule's matchers and compare label sets |
 | 429 Too Many Requests | Bulk drop-rule sync | Add `--retries 3`, throttle to <10 creates per second |
 
 ## References

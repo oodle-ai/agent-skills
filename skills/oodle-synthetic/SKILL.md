@@ -1,8 +1,8 @@
 ---
 name: oodle-synthetic
-description: Create and manage Oodle synthetic monitors — HTTP and TCP health checks with assertions and configurable intervals.
+description: Create and manage Oodle synthetic monitors — HTTP and TCP health checks with expected status and latency, and configurable intervals.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,synthetic,monitoring,health-checks
@@ -12,7 +12,7 @@ metadata:
 
 # Oodle Synthetic Monitors — HTTP / TCP Checks
 
-This skill teaches the agent to configure synthetic monitors that actually catch failures: assertions, sane intervals, and update-without-overwrite.
+This skill teaches the agent to configure synthetic monitors that actually catch failures: expected status and latency, sane intervals, and update-without-overwrite.
 
 ## Prerequisites
 
@@ -53,35 +53,51 @@ Before running any oodle command:
 ```json
 {
   "name": "API health check",
-  "type": "http",
-  "target": "https://api.example.com/health",
-  "interval": 60,
-  "assertions": [
-    {"type": "statusCode",   "value": "200"},
-    {"type": "responseTime", "value": "2000"}
-  ]
+  "enabled": true,
+  "rule_type": "http",
+  "rule_config": {
+    "http": {
+      "url": "https://api.example.com/health",
+      "method": "GET",
+      "expected_status_codes": [200],
+      "max_response_time_ms": 2000
+    }
+  },
+  "interval": "60s",
+  "timeout": "10s",
+  "conditions": {
+    "critical": {"op": "<", "value": 1}
+  }
 }
 ```
 
 | Field | Meaning |
 |-------|---------|
-| `type` | `http` or `tcp` |
-| `target` | URL (HTTP) or `host:port` (TCP) |
-| `interval` | Seconds between probes; minimum 30, recommended ≥ 60 |
-| `assertions[].type` | `statusCode`, `responseTime`, `bodyContains`, `headerEquals` |
-| `assertions[].value` | String form of the expected value (e.g. `"200"`, `"2000"`, `"ok"`) |
+| `rule_type` | `http` or `tcp` (also `ping`, `dns`, `ssl`, `traceroute`, `multistep`) |
+| `rule_config.http` | `url` and `method` (HTTP) |
+| `rule_config.tcp` | `host` and `port` (TCP) |
+| `interval` | Duration string between probes (`"60s"`); minimum `10s`, recommended ≥ `60s` |
+| `timeout` | Duration string; at least `1s`, and not more than `interval` |
+| `expected_status_codes` | Status codes (`200`) or patterns (`"2XX"`) that pass. `excluded_status_codes` fails on a match |
+| `max_response_time_ms` | The check fails when the response is slower |
+| `expected_body`, `expected_headers` | Content the response must have (e.g. `"ok"`) |
+| `conditions` | The check result is `1` (up) or `0` (down), so `{"op": "<", "value": 1}` alerts when a check fails. `op` is a string: `>`, `>=`, `<`, `<=`, `==`, `!=` |
 
 ### Synthetic monitor schema (TCP)
 
 ```json
 {
   "name": "Postgres reachability",
-  "type": "tcp",
-  "target": "postgres.example.com:5432",
-  "interval": 60,
-  "assertions": [
-    {"type": "responseTime", "value": "1000"}
-  ]
+  "enabled": true,
+  "rule_type": "tcp",
+  "rule_config": {
+    "tcp": {"host": "postgres.example.com", "port": 5432}
+  },
+  "interval": "60s",
+  "timeout": "5s",
+  "conditions": {
+    "critical": {"op": "<", "value": 1}
+  }
 }
 ```
 
@@ -99,13 +115,13 @@ oodle synthetic-monitors create -f monitor.json
 ### Updating a monitor
 
 ```bash
-# ✅ CORRECT — get → edit → update preserves all assertions
+# ✅ CORRECT — get → edit → update preserves rule_config
 oodle synthetic-monitors get syn_123 -o json > monitor.json
-jq '.interval = 30' monitor.json > monitor.new.json
+jq '.interval = "30s"' monitor.json > monitor.new.json
 oodle synthetic-monitors update syn_123 -f monitor.new.json
 
-# ❌ WRONG — partial payload removes assertions
-oodle synthetic-monitors update syn_123 -f <(echo '{"interval":30}')
+# ❌ WRONG — partial payload removes rule_config
+oodle synthetic-monitors update syn_123 -f <(echo '{"interval":"30s"}')
 ```
 
 ### Deleting a monitor
@@ -121,57 +137,55 @@ oodle synthetic-monitors delete "$(oodle synthetic-monitors list | grep health |
 
 ## Best Practices
 
-### Use `interval: 60` (or higher) for non-critical endpoints
+### Use `interval: "60s"` (or higher) for non-critical endpoints
 
 A 10-second interval on every endpoint multiplies cost and noise. Reserve short intervals for critical user-facing flows.
 
 ```bash
 # ✅ CORRECT — 60s interval for a /health endpoint
-"interval": 60
+"interval": "60s"
 
 # ❌ WRONG — 10s on dozens of internal endpoints
-"interval": 10
+"interval": "10s"
 ```
 
-### Always include at least one `statusCode` assertion
+### Always set `expected_status_codes`
 
-A monitor with no assertions only checks TCP reachability — it will pass even if the app returns 500 to every request.
+Without it, the check passes on any 2XX response, which may not be the response you expect.
 
 ```bash
 # ✅ CORRECT
-"assertions": [{"type":"statusCode","value":"200"},{"type":"responseTime","value":"2000"}]
+"expected_status_codes": [200], "max_response_time_ms": 2000
 
-# ❌ WRONG — monitor "succeeds" on a 500 response
-"assertions": []
+# ❌ WRONG — monitor "succeeds" on any 2XX response
+"expected_status_codes": []
 ```
 
-### Add a `responseTime` assertion to catch slow dependencies
+### Add `max_response_time_ms` to catch slow dependencies
 
 A 200 response that takes 30 seconds is still a failure for users.
 
 ```bash
 # ✅ CORRECT
-"assertions": [
-  {"type":"statusCode","value":"200"},
-  {"type":"responseTime","value":"2000"}
-]
+"expected_status_codes": [200],
+"max_response_time_ms": 2000
 
 # ❌ WRONG — only checks status code, doesn't catch latency regressions
-"assertions": [{"type":"statusCode","value":"200"}]
+"expected_status_codes": [200]
 ```
 
-### Always `get` before `update` to preserve assertions
+### Always `get` before `update` to preserve `rule_config`
 
 Update is a full-document replace.
 
 ```bash
 # ✅ CORRECT
 oodle synthetic-monitors get syn_123 -o json > m.json
-jq '.assertions += [{"type":"bodyContains","value":"ok"}]' m.json > m.new.json
+jq '.rule_config.http.expected_body = "ok"' m.json > m.new.json
 oodle synthetic-monitors update syn_123 -f m.new.json
 
-# ❌ WRONG — drops `assertions` and `target`
-oodle synthetic-monitors update syn_123 -f <(echo '{"interval":120}')
+# ❌ WRONG — drops `rule_config`
+oodle synthetic-monitors update syn_123 -f <(echo '{"interval":"120s"}')
 ```
 
 ### Use a stable `name` per environment
@@ -194,8 +208,9 @@ Encode env in the name (`API health check (prod)`, `API health check (staging)`)
 | 404 Not Found | Synthetic monitor ID does not exist | Verify with `oodle synthetic-monitors list -o json` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
 | Monitor permanently red | Target unreachable from the probe egress | `curl -I` from the public internet; check firewall, DNS, TLS cert |
-| Monitor flaps | `interval` too aggressive or `responseTime` assertion too tight | Raise interval to 60s; raise `responseTime` to p95+headroom |
-| Assertions silently dropped | `update` was called with a partial payload | Re-create from the last `get` snapshot; always `get` → edit → `update` |
+| Monitor flaps | `interval` too aggressive or `max_response_time_ms` too tight | Raise interval to `60s`; raise `max_response_time_ms` to p95+headroom |
+| `interval must be at least 10 seconds` / `timeout cannot exceed interval` | Wrong durations, or a plain number | Use duration strings such as `"60s"` and `"10s"` |
+| `rule_config` silently dropped | `update` was called with a partial payload | Re-create from the last `get` snapshot; always `get` → edit → `update` |
 | 429 Too Many Requests | Many probes scheduled at the same second | Stagger by editing `interval` per monitor; use `--retries 3` for bulk operations |
 
 ## References

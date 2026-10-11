@@ -1,8 +1,8 @@
 ---
 name: oodle-logs
-description: Search and query log data using OpenSearch Query DSL, and discover available log index patterns.
+description: Search, query, and aggregate log data using OpenSearch Query DSL, and discover available log index patterns.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,logs,search,opensearch,index-patterns
@@ -59,7 +59,7 @@ oodle logs index-patterns -o json | jq '.[].title'
 # CORRECT — use a discovered pattern in a log query
 oodle logs index-patterns -o json | jq '.[].title'
 # Then use the title in your NDJSON file:
-# {"index": "oodle_internal_dev_logs"}
+# {"index": "logs-*"}
 # {"query": {"match_all": {}}, "size": 10}
 ```
 
@@ -69,7 +69,7 @@ Search log data using the OpenSearch-compatible multi-search API. The request bo
 
 **Important constraints:**
 - The CLI only supports a **single search body** (exactly 2 NDJSON lines: one header + one search). Multiple search pairs are not supported.
-- Use `--start` and `--end` flags for time range filtering. Values can be epoch milliseconds (e.g., `1716825600000`), `now`, or relative expressions (e.g., `-1h`, `-24h`, `-7d`).
+- Use `--start` and `--end` flags for time range filtering. Values can be epoch milliseconds (e.g., `1716825600000`), RFC 3339 (e.g., `2026-01-02T00:00:00Z`), `now`, or relative expressions (e.g., `-1h`, `-24h`, `-7d`).
 - **`--start` defaults to `-1h` and `--end` defaults to `now`**. If you are searching for data older than 1 hour, you **must** pass an explicit `--start` or the query will silently return 0 results.
 - Do **not** put range filters on `timestamp` in the query body — the CLI auto-injects a `timestamp` range filter from `--start`/`--end`.
 
@@ -125,6 +125,62 @@ oodle logs query --body '{"index":"logs-*"}'
 # WRONG — using JSON instead of NDJSON format
 oodle logs query -f query.json   # file must be valid NDJSON (exactly two lines)
 ```
+
+### Aggregations
+
+Put OpenSearch aggregations in an `aggs` block. Set `"size": 0` when you need only the aggregation. Read the result with `jq '.responses[0].aggregations'`. The field names below are examples; confirm them with `oodle logs index-patterns`. Numeric aggregations need a numeric field, not text inside `message`.
+
+```bash
+# CORRECT — error lines per service (top 20)
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"size": 0, "query": {"term": {"level": "error"}}, "aggs": {"by_service": {"terms": {"field": "service_name", "size": 20}}}}
+EOF
+oodle logs query -f query.ndjson --start -24h --end now -o json \
+  | jq -r '.responses[0].aggregations.by_service.buckets[] | "\(.key)\t\(.doc_count)"'
+
+# CORRECT — error lines per hour
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"size": 0, "query": {"match_phrase": {"message": "error"}}, "aggs": {"per_hour": {"date_histogram": {"field": "timestamp", "fixed_interval": "1h"}}}}
+EOF
+oodle logs query -f query.ndjson --start -24h --end now -o json \
+  | jq -r '.responses[0].aggregations.per_hour.buckets[] | "\(.key_as_string)\t\(.doc_count)"'
+```
+
+### Values inside plain-text log lines
+
+`regexp` queries, scripts, and runtime fields are not supported. So a log query cannot filter on, or group by, a value that is only inside the text of a plain-text line. For lines like `tool Bash ok in 12345 ms`, a query cannot select "more than 10000 ms" or group by the tool name. Do not tell the user that Oodle cannot do it. Offer one of these:
+
+1. **Log metrics rule** (oodle-log-metrics skill): extracts the value with a regex into a metric with labels. Use it for counts, latency, and alerts on new logs.
+2. **Past data**: find the lines with `match_phrase`, and extract the value on the client with `jq`.
+
+| Need | Use |
+|------|-----|
+| Find lines, read events, investigate the past | `oodle logs query` |
+| Count or group by a real field, over the past | `oodle logs query` with `aggs` |
+| Filter or group by a value only inside plain text | Log metrics rule (new data), or `jq` on the client (past data) |
+| Alert on log lines (count, rate, latency, per user) | Log metrics rule + monitor |
+| Trend over weeks on a dashboard | Log metrics rule |
+
+### Worked example: whose credit ran out in the last 24 hours?
+
+First check if a log metrics rule already counts these lines: `oodle log-metrics list -o json`. If one does, read its metric, for example `oodle metrics query --query 'sum by (user) (increase(oodle_logs_credit_exhausted[24h])) > 0' -o json`. A rule counts only lines that arrived after it was made, so use the logs below for older data.
+
+```bash
+cat > credit.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"match_phrase": {"message": "credit exhausted"}}, "size": 1000, "sort": [{"timestamp": {"order": "desc"}}]}
+EOF
+
+# If the user is a real field (for example user_id): use a terms aggregation on it.
+# If the user is only inside the text ("... for user=alice ..."): extract it on the client.
+oodle logs query -f credit.ndjson --start -24h --end now -o json \
+  | jq -r '.responses[0].hits.hits[]._source.message | capture("user=(?<user>[^ ]+)").user' \
+  | sort | uniq -c | sort -rn
+```
+
+If the query returns `size` lines, there can be more: split the time range (for example, four 6-hour queries) and combine the results. To alert per user from now on, create a log metrics rule that extracts `user` with the regex `user=(\S+)`, and a monitor on `sum by (user) (increase(oodle_logs_credit_exhausted[10m]))`. The oodle-log-metrics skill has the rule JSON.
 
 ## Best Practices
 
@@ -197,7 +253,8 @@ oodle logs index-patterns -o json | jq '.[0].fields[].name'
 | 0 results for older data | `--start` defaults to `-1h`; data outside that window is excluded | Pass explicit `--start` for older data, e.g. `--start -24h` or `--start <epoch_ms>` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var, ensure no trailing slash |
 | 429 Too Many Requests | Rate limited | Add `--retries 3`, back off, reduce query frequency |
-| `required flag "file"` | Missing required flag for log query | Add `-f` flag with path to NDJSON file |
+| 400 on `regexp`, `script`, or runtime field | Not supported | Use `match_phrase`, or a log metrics rule (see "Values inside plain-text log lines") |
+| `required flag(s) "file" not set` | Missing required flag for log query | Add `-f` flag with path to NDJSON file |
 
 ## References
 

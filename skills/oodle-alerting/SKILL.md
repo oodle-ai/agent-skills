@@ -2,7 +2,7 @@
 name: oodle-alerting
 description: Manage Oodle notifiers, notification policies, and muting rules — routing alerts to the right channels and silencing during maintenance.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,alerting,notifiers,notifications,muting
@@ -55,22 +55,33 @@ Before running any oodle command:
 | List muting rules | `oodle muting-rules list -o json` |
 | Get muting rule | `oodle muting-rules get <id> -o json` |
 | Create muting rule | `oodle muting-rules create -f mute.json` |
-| Update muting rule | `oodle muting-rules update <id> -f mute.json` |
+| Change muting rule | No `update`: `get` it, `delete` it, and `create` the edited copy |
 | Delete muting rule | `oodle muting-rules delete <id> --force` |
 
 ## Common Operations
 
 ### Notifiers — channel definitions
 
-A notifier wraps a destination (Slack, PagerDuty, email, webhook). The `config` block depends on `type`.
+A notifier wraps a destination (Slack, PagerDuty, email, webhook). `type` is a number, and the config goes in the field for that type:
+
+| `type` | Destination | Config field |
+|--------|-------------|--------------|
+| `0` | Email | `email_config` |
+| `1` | PagerDuty | `pagerduty_config` |
+| `2` | Slack | `slack_config` |
+| `3` | Opsgenie | `opsgenie_config` |
+| `4` | Webhook | `webhook_config` |
+| `5` | Google Chat | `googlechat_config` |
+| `6` | Microsoft Teams | `msteamsv2_config` |
+| `7` | Rootly | `rootly_config` |
 
 Slack:
 
 ```json
 {
   "name": "slack-ops",
-  "type": "slack",
-  "config": { "webhookUrl": "https://hooks.slack.com/services/T000/B000/XXXX" }
+  "type": 2,
+  "slack_config": { "api_url": "https://hooks.slack.com/services/T000/B000/XXXX", "channel": "#ops", "send_resolved": true }
 }
 ```
 
@@ -79,8 +90,8 @@ PagerDuty:
 ```json
 {
   "name": "pd-platform",
-  "type": "pagerduty",
-  "config": { "integrationKey": "abc123def456" }
+  "type": 1,
+  "pagerduty_config": { "routing_key": "abc123def456", "send_resolved": true }
 }
 ```
 
@@ -89,8 +100,8 @@ Email:
 ```json
 {
   "name": "email-platform",
-  "type": "email",
-  "config": { "addresses": ["oncall@example.com", "alerts@example.com"] }
+  "type": 0,
+  "email_config": { "to": "oncall@example.com", "send_resolved": true }
 }
 ```
 
@@ -99,46 +110,52 @@ Webhook:
 ```json
 {
   "name": "webhook-incident-bot",
-  "type": "webhook",
-  "config": { "url": "https://incidents.example.com/oodle" }
+  "type": 4,
+  "webhook_config": { "url": "https://incidents.example.com/oodle", "send_resolved": true }
 }
 ```
+
+The create output has the notifier `id` (a UUID). Policies and monitors refer to notifiers by this id, not by name.
 
 ```bash
 # ✅ CORRECT
 oodle notifiers create -f notifier.json
 
-# ❌ WRONG — missing config block, server returns 400
-oodle notifiers create -f <(echo '{"name":"x","type":"slack"}')
+# ❌ WRONG — missing config field, server returns 400
+oodle notifiers create -f <(echo '{"name":"x","type":2}')
 ```
 
 ### Notification policies — routing
 
-A notification policy matches alerts by labels and routes them to a receiver (notifier name).
+A notification policy lists the notifiers (by id) for each severity: `critical`, `warn`, `no_data`, or `any`. It has no label matchers.
 
 ```json
 {
   "name": "platform-prod",
-  "matchers": [
-    {"name": "team", "value": "platform"},
-    {"name": "env",  "value": "prod"}
-  ],
-  "receiver": "slack-ops",
-  "routes": [
-    {
-      "matchers": [{"name": "severity", "value": "critical"}],
-      "receiver": "pd-platform"
-    }
-  ]
+  "notifiers": {
+    "critical": ["<pd-platform-notifier-id>", "<slack-ops-notifier-id>"],
+    "warn": ["<slack-ops-notifier-id>"]
+  }
 }
+```
+
+A monitor matches its alerts by labels and routes them in its `notifications` list. Each entry has label `matchers` and a `notification_policy_id` (or inline `notifiers`). The first entry whose matchers match is used. An entry with empty matchers must be the last one.
+
+```json
+"notifications": [
+  {
+    "matchers": [{"type": 0, "name": "team", "value": "platform"}, {"type": 0, "name": "env", "value": "prod"}],
+    "notification_policy_id": "<policy-id>"
+  }
+]
 ```
 
 ```bash
 # ✅ CORRECT
 oodle notification-policies create -f policy.json
 
-# ❌ WRONG — references a notifier that doesn't exist; server returns 400
-# (no `receiver` set or `receiver: "non-existent"`)
+# ❌ WRONG — references a notifier id that doesn't exist
+# ("critical": ["non-existent"])
 ```
 
 ### Muting rules — scheduled silence
@@ -180,14 +197,14 @@ oodle muting-rules create -f mute.json
 A misconfigured Slack webhook fails silently — alerts disappear into the void.
 
 ```bash
-# ✅ CORRECT — create notifier, attach to a `severity=info` test monitor, fire it once,
+# ✅ CORRECT — create notifier, attach to a test monitor with a low `warn` threshold, fire it once,
 # confirm message arrives, then attach to the production policy.
 oodle notifiers create -f notifier.json
-oodle monitors create -f test-monitor.json   # severity=info, low threshold
+oodle monitors create -f test-monitor.json   # low `warn` threshold, routed to the new notifier
 # wait for fire, confirm receipt, then:
 oodle notification-policies update pol_123 -f policy.json   # adds the new notifier
 
-# ❌ WRONG — attach an untested notifier directly to a `severity=critical` policy
+# ❌ WRONG — attach an untested notifier directly to the `critical` severity of a policy
 oodle notifiers create -f notifier.json
 oodle notification-policies create -f policy-critical.json
 ```
@@ -199,11 +216,12 @@ Deleting a notifier referenced by an active policy causes alerts to be dropped s
 ```bash
 # ✅ CORRECT — find references first
 oodle notifiers get notif_slack_ops -o json
-oodle notification-policies list -o json | jq '.[] | select(.receiver=="slack-ops" or (.routes[]?.receiver=="slack-ops")) | .id'
-# update those policies to a different receiver, then:
+oodle notification-policies list -o json | jq '.[] | select([.notifiers[]?[]?] | index("notif_slack_ops")) | .id'
+oodle monitors list -o json | jq '.[] | select([.notifications[]?.notifiers[]?[]?] | index("notif_slack_ops")) | .id'
+# update those policies and monitors to a different notifier, then:
 oodle notifiers delete notif_slack_ops --force
 
-# ❌ WRONG — delete without checking; live policies suddenly route to a missing receiver
+# ❌ WRONG — delete without checking; live policies suddenly route to a missing notifier
 oodle notifiers delete notif_slack_ops --force
 ```
 
@@ -236,29 +254,27 @@ An open-ended mute that nobody remembers becomes a permanent silence on a critic
 "startsAt": "2024-01-15T02:00:00Z", "endsAt": null
 ```
 
-### Scope policy matchers to the smallest set of labels that uniquely identify the team
+### Scope monitor `notifications` matchers to the smallest set of labels that uniquely identify the team
 
 Overly-broad matchers (`{env: prod}` only) route every prod alert to one notifier.
 
 ```bash
 # ✅ CORRECT
-"matchers": [{"name":"team","value":"platform"},{"name":"env","value":"prod"}]
+"matchers": [{"type":0,"name":"team","value":"platform"},{"type":0,"name":"env","value":"prod"}]
 
-# ❌ WRONG — every prod alert in the org routes here
-"matchers": [{"name":"env","value":"prod"}]
+# ❌ WRONG — every prod alert routes here
+"matchers": [{"type":0,"name":"env","value":"prod"}]
 ```
 
-### Use nested `routes` for severity escalation, not separate top-level policies
+### Use the severities of one policy for escalation, not separate policies
 
-A child route inherits the parent matchers; defining a separate top-level policy for `severity=critical` will double-fire.
+Put the pager in `critical` and the chat channel in `warn` of one policy. Two policies that both apply to an alert will double-fire.
 
 ```bash
 # ✅ CORRECT
-"matchers": [{"name":"team","value":"platform"}],
-"receiver": "slack-ops",
-"routes": [{"matchers":[{"name":"severity","value":"critical"}],"receiver":"pd-platform"}]
+"notifiers": {"critical": ["<pd-platform-notifier-id>"], "warn": ["<slack-ops-notifier-id>"]}
 
-# ❌ WRONG — two top-level policies, both match, both fire
+# ❌ WRONG — two policies, both apply, both fire
 ```
 
 ## Failure Handling
@@ -268,9 +284,11 @@ A child route inherits the parent matchers; defining a separate top-level policy
 | 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
 | 404 Not Found | Notifier / policy / muting-rule ID does not exist | Verify with the matching `list` command |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
-| `receiver not found` | Policy references a notifier name that doesn't exist | Run `oodle notifiers list -o json` and match the `name` field exactly |
-| Slack messages not arriving | Wrong webhook URL or webhook deactivated | Re-issue the Slack incoming webhook; update notifier `config.webhookUrl`; re-test |
-| PagerDuty incidents not created | Wrong `integrationKey` or wrong service | Confirm the routing key in PagerDuty; update notifier `config.integrationKey` |
+| Policy or monitor points to a missing notifier | The notifier id was deleted or is wrong | Run `oodle notifiers list -o json` and use the `id` (UUID), not the name |
+| `notification without label matchers must be the last notification` | Catch-all entry in a monitor's `notifications` is not last | Move the entry with empty matchers to the end |
+| Slack messages not arriving | Wrong webhook URL or webhook deactivated | Re-issue the Slack incoming webhook; update notifier `slack_config.api_url`; re-test |
+| PagerDuty incidents not created | Wrong `routing_key` or wrong service | Confirm the routing key in PagerDuty; update notifier `pagerduty_config.routing_key` |
+| `oodle muting-rules update` prints the help | Muting rules have no `update` | `get`, `delete`, and `create` the edited copy |
 | Mute didn't take effect | `startsAt` is in the future or label matchers don't match the alert | `oodle muting-rules get <id> -o json` and compare matchers to the firing alert's labels |
 | 429 Too Many Requests | Bulk policy sync | Add `--retries 3`, throttle to <10 creates per second |
 

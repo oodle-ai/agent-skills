@@ -2,7 +2,7 @@
 name: oodle-metrics-query
 description: Execute PromQL instant and range queries against Oodle metrics using the Prometheus-compatible query API.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,metrics,query,promql,prometheus
@@ -67,7 +67,7 @@ oodle metrics query -o json
 
 ### Range query
 
-Evaluate a PromQL expression over a time range. All four flags (`--query`, `--start`, `--end`, `--step`) are required.
+Evaluate a PromQL expression over a time range. Only `--query` is required. `--start`, `--end`, and `--step` default to `-1h`, `now`, and `60s`. Time flags take `now`, a relative value (`-1h`, `-7d`), RFC 3339, or an epoch timestamp.
 
 ```bash
 # CORRECT — range query over the last hour with 60-second resolution
@@ -78,12 +78,6 @@ oodle metrics query-range --query "up" --start 1700000000 --end 1700003600 --ste
 
 # CORRECT — enable partial response for degraded-mode queries
 oodle metrics query-range --query "up" --start -1h --end now --step 60s --partial-response -o json
-
-# WRONG — missing --step flag
-oodle metrics query-range --query "up" --start -1h --end now -o json
-
-# WRONG — missing --start or --end
-oodle metrics query-range --query "up" --step 60s -o json
 ```
 
 ## Best Practices
@@ -123,11 +117,10 @@ oodle metrics query-range --query "up" --start -1d --end now --step 1s -o json
 |-------|-------|-----|
 | 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
 | 400 Bad Request | Invalid PromQL expression | Check syntax at https://prometheus.io/docs/prometheus/latest/querying/basics/ |
-| Empty result (not an error) | Metric does not exist or no data in time range | Run `oodle metrics names` to verify the metric exists; widen the time range |
+| Empty result (not an error) | Metric does not exist or no data in time range. An instant query reads only the last 5 minutes before `--time` | Run `oodle metrics names` to verify the metric exists; widen the time range, or use `query-range --start -7d` for sparse metrics |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var, ensure no trailing slash |
 | 429 Too Many Requests | Rate limited | Add `--retries 3`, back off, reduce query frequency |
-| `required flag "step"` | Missing required flag for range query | Add `--step` flag (e.g. `--step 60s`) |
-| `required flag "query"` | Missing required flag | Add `--query` flag with a PromQL expression |
+| `required flag(s) "query" not set` | Missing required flag | Add `--query` flag with a PromQL expression |
 
 ## References
 
