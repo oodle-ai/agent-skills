@@ -59,7 +59,7 @@ oodle logs index-patterns -o json | jq '.[].title'
 # CORRECT — use a discovered pattern in a log query
 oodle logs index-patterns -o json | jq '.[].title'
 # Then use the title in your NDJSON file:
-# {"index": "oodle_internal_dev_logs"}
+# {"index": "logs-*"}
 # {"query": {"match_all": {}}, "size": 10}
 ```
 
