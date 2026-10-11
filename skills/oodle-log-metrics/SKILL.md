@@ -12,7 +12,7 @@ metadata:
 
 # Oodle Log Metrics — Rules, Extraction, and Log Alerts
 
-This skill teaches the agent to turn log lines into metrics, and to alert on logs. A log metrics rule selects lines with a filter, extracts label values and numbers with regex or JSON paths, and emits Prometheus metrics. A monitor then alerts on those metrics with PromQL. Setup, auth, `get`-before-`update`, safe delete, and common errors: see the oodle-cli skill.
+This skill teaches the agent to turn log lines into metrics, and to alert on logs. A log metrics rule selects lines with a filter, extracts label values and numbers with regex or JSON paths, and emits Prometheus metrics. A monitor then alerts on those metrics with PromQL. Safe delete and common errors: see the oodle-cli skill.
 
 Facts to keep in mind:
 
@@ -20,6 +20,18 @@ Facts to keep in mind:
 - **A rule works on plain-text lines.** For example, it can read the user from `credit exhausted for user=alice` or the duration from `tool Bash ok in 12345 ms`.
 - **A label can carry the user.** The monitor fires once per series, so a label extracted from the line (user, tool, tenant) names it in the alert.
 - **No backfill.** A rule applies only to logs that arrive after you create it. For past data, use `oodle logs query` (see the oodle-logs skill).
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle log-metrics list -o json | jq 'length'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill.
 
 ## Workflow
 

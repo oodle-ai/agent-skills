@@ -12,7 +12,19 @@ metadata:
 
 # Oodle Metrics — Discovery and Querying
 
-This skill teaches the agent to find metric names, enumerate their labels, and build PromQL queries that return data on the first try. Setup, auth, time flag values, and common errors: see the oodle-cli skill. To run the queries, see the oodle-metrics-query skill.
+This skill teaches the agent to find metric names, enumerate their labels, and build PromQL queries that return data on the first try. To run the queries, see the oodle-metrics-query skill.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle metrics names -o json | jq 'length'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill.
 
 ## Quick Reference
 

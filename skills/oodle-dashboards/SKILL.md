@@ -12,13 +12,26 @@ metadata:
 
 # Oodle Dashboards — CRUD and Organization
 
-This skill teaches the agent to manage Oodle dashboards and folders without losing panel state and without orphaning dashboards in the root folder. Setup, auth, and common errors: see the oodle-cli skill.
+This skill teaches the agent to manage Oodle dashboards and folders without losing panel state and without orphaning dashboards in the root folder.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle dashboards list -o json | jq 'length'
+oodle folders list -o json | jq 'length'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill.
 
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| List dashboards | `oodle dashboards list -o json` (filter with `jq '.[] \| select(.folderUid=="platform") \| {uid, title}'`) |
+| List dashboards | `oodle dashboards list -o json` (also lists folders; filter with `jq '.[] \| select(.type=="dash-db" and .folderUid=="platform") \| {uid, title}'`) |
 | Get dashboard | `oodle dashboards get <uid> -o json` → `{"dashboard": {...}, "meta": {"folderUid": ..., "version": ...}}` |
 | Create dashboard | `oodle dashboards create -f save.json` |
 | Update dashboard | `oodle dashboards create -f save.json` with the existing `dashboard.uid` and `"overwrite": true` |
@@ -54,7 +67,14 @@ There is no `dashboards update` command, and no `folders get` or `folders delete
 }
 ```
 
-- **Always set `folderUid`.** Without it the dashboard goes to the root folder, where teams cannot find it. To make a new folder: `FOLDER_UID=$(oodle folders create --title "Platform" -o json | jq -r '.uid')`.
+- **Always set `folderUid`.** Without it the dashboard goes to the root folder, where teams cannot find it. Create the folder first, then create the dashboards in it.
+
+  ```bash
+  FOLDER_UID=$(oodle folders create --title "Platform" -o json | jq -r '.uid')
+  jq --arg f "$FOLDER_UID" '.folderUid = $f' save.json > save.with-folder.json
+  oodle dashboards create -f save.with-folder.json
+  ```
+
 - **Tag dashboards** with `service:`, `team:`, and `env:` so people and tools can find them.
 
 ## Changing a Dashboard
@@ -73,7 +93,7 @@ oodle dashboards update api-overview -f <(echo '{"title":"new title"}')
 
 ## Deleting a Shared Dashboard
 
-Runbooks, chat messages, and bookmarks link to dashboards. Delete in two phases: rename it first, then delete after at least 7 days.
+Runbooks, chat messages, and bookmarks link to dashboards. A hard delete breaks every link at once. Delete in two phases: rename it first, so its users see that it will go, then delete it after at least 7 days. Delete at once only a dashboard that you made and nobody else uses.
 
 ```bash
 oodle dashboards get api-overview -o json > current.json
@@ -87,9 +107,17 @@ oodle dashboards delete api-overview --force
 
 `$__range` is the whole dashboard range, so every step re-reads almost the same data. A 6h panel with `[$__range]` reads about 180 times more samples than with `[$__dd_interval]`, and the factor grows as the user zooms out. Oodle marks such a panel with a warning triangle. Use a window that scales with the range:
 
-- `$__rate_interval` — for `rate()` and `increase()` on a graph.
-- `$__dd_interval` — Oodle's default rollup (20s at 1h, 5m at 24h, 1h at 7d, capped at 4h). Use it for stat totals.
-- `$__large_interval` — a coarser rollup (1m at 1h, 20m at 24h, 4h at 7d, capped at 12h). Use it for bar charts and long ranges.
+- `$__rate_interval` — Grafana's rate window, `max(step + scrape interval, 4 x scrape interval)`, so a rate always has enough samples. For `rate()` and `increase()` on a graph.
+- `$__dd_interval` — Oodle's default rollup for the range (the Datadog default), capped at 4h. Use it for stat totals.
+- `$__large_interval` — a coarser rollup, capped at 12h. Use it for bar charts and long ranges.
+
+| Dashboard range | `$__dd_interval` | `$__large_interval` |
+|-----------------|------------------|---------------------|
+| 1 hour | 20s | 1m |
+| 6 hours | 2m | 5m |
+| 24 hours | 5m | 20m |
+| 7 days | 1h | 4h |
+| 30 days | 4h | 12h |
 
 Do not use `increase(...[$__range]) / $__range_s`; use `rate(...[$__rate_interval])`.
 
@@ -117,4 +145,5 @@ Keep the min step equal to the window, so the windows tile the range (a smaller 
 
 ## References
 
+- [Oodle CLI repo](https://github.com/oodle-ai/oodle-cli)
 - [Query optimization — lookback windows and `$__range`](https://docs.oodle.ai/metrics/query-optimization)

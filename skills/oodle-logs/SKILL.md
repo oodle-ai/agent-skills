@@ -12,7 +12,19 @@ metadata:
 
 # Oodle Logs — Search and Index Pattern Discovery
 
-This skill teaches the agent to search log data using the OpenSearch-compatible query DSL and to discover available log index patterns. Setup, auth, time flag values, and common errors: see the oodle-cli skill.
+This skill teaches the agent to search log data using the OpenSearch-compatible query DSL and to discover available log index patterns.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle logs index-patterns -o json | jq '.[].title'
+```
+
+Other install methods, auth details, time flag values, and common errors: see the oodle-cli skill.
 
 ## Workflow
 

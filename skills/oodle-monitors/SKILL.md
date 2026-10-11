@@ -12,7 +12,19 @@ metadata:
 
 # Oodle Monitors — CRUD and Alerting
 
-This skill teaches the agent to build, validate, and update Oodle monitors so that alerts are actionable, scoped, and free from flapping. Setup, auth, `get`-before-`update`, safe delete, and common errors: see the oodle-cli skill.
+This skill teaches the agent to build, validate, and update Oodle monitors so that alerts are actionable, scoped, and free from flapping.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle monitors list -o json | jq 'length'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill.
 
 A monitor runs one PromQL query and compares each result series with the thresholds in `conditions`. It fires once for each series that crosses a threshold. The labels of that series go into the alert.
 
@@ -90,8 +102,26 @@ The oodle-log-metrics and oodle-traces skills have more examples.
 - **Use a range of 5 minutes or more and a `for`.** `[1m]` and no `for` flap on normal spikes. Use `[5m]` or more in `rate`/`increase`, and `"for": "5m"` or more in production.
 - **Scope the query with label matchers** (`{env="prod", service="api"}`). With no matchers, the monitor alerts on every series of the metric, including resources you do not own.
 - **Keep the labels you need with `by (...)`.** The alert carries only the labels that the result keeps. `sum(...)` with no `by` removes them all, so the alert cannot name the user or host.
-- **Put a summary and a runbook URL in `annotations`.** An alert must tell the reader what to do.
+- **Use `keep_firing_for` to stop flapping on recovery.** Oodle has no recovery threshold (there is no `critical_recovery`). With `"keep_firing_for": "10m"`, the alert stays open for 10 minutes after the value goes back below the threshold, so a value that moves around the threshold does not resolve and fire again and again.
+- **Add a `warn` condition below `critical`** (for example `warn` at 80 and `critical` at 90). The warning gives time to act before the page.
+- **Put a summary and a runbook URL in `annotations`.** An alert must tell the reader what to do. Routing is in `notifications`, not in the text.
 - **Set at least `team` and `env` in `labels`.** Notification policies route on them, and `jq` finds monitors by them.
+
+## Changing or Deleting a Monitor
+
+`update` replaces the whole monitor. A body with only the changed field removes the other fields. Always `get` → edit → `update`:
+
+```bash
+# ✅ CORRECT
+oodle monitors get <id> -o json > m.json
+jq '.conditions.critical.value = 85' m.json > m.new.json
+oodle monitors update <id> -f m.new.json
+
+# ❌ WRONG — only the changed field; the query, labels, and routing are lost
+oodle monitors update <id> -f <(echo '{"conditions":{"critical":{"op":2,"value":85}}}')
+```
+
+Delete only an ID that you confirmed with `get`: `oodle monitors get <id> -o json`, then `oodle monitors delete <id> --force`. For several monitors, `oodle monitors delete --ids <id1>,<id2> --force`. Never delete an ID found with `grep` on table output.
 
 ## Failure Handling
 

@@ -12,7 +12,33 @@ metadata:
 
 # Oodle Alerting — Notifiers, Policies, Muting
 
-This skill teaches the agent to wire alert routing end-to-end: notifiers (where alerts go), notification policies (how they're matched and routed), and muting rules (when to silence them). Setup, auth, `get`-before-`update`, safe delete, and common errors: see the oodle-cli skill.
+This skill teaches the agent to wire alert routing end-to-end: notifiers (where alerts go), notification policies (how they're matched and routed), and muting rules (when to silence them).
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access to all three resources
+oodle notifiers list -o json | jq 'length'
+oodle notification-policies list -o json | jq 'length'
+oodle muting-rules list -o json | jq 'length'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill.
+
+## Safe Changes
+
+- **`update` replaces the whole notifier or policy.** A body with only the changed field removes the other fields. Always `get` → edit → `update`:
+
+  ```bash
+  oodle notification-policies get <id> -o json > p.json
+  jq '.notifiers.warn += ["<slack-notifier-id>"]' p.json > p.new.json
+  oodle notification-policies update <id> -f p.new.json
+  ```
+
+- **Delete only an ID that you confirmed with `get`.** Never delete an ID found with `grep` on table output.
 
 ## Quick Reference
 
@@ -49,7 +75,10 @@ Other types use the same shape, for example `{"name": "pd-platform", "type": 1, 
 
 The create output has the notifier `id` (a UUID). Policies and monitors refer to notifiers by this id, not by name.
 
-**Test a new notifier before you use it for critical alerts.** A wrong Slack webhook fails silently. Route a test monitor (low `warn` threshold) to the new notifier, confirm the message arrives, then add it to the production policy.
+**Test a new notifier before you use it for critical alerts.** A wrong Slack webhook or PagerDuty key fails silently, and the alerts are lost. The CLI has no test command. Do one of these, and confirm that the message arrives before you add the notifier to a production policy:
+
+- In the Oodle UI, open the notifier and use **Send test alert**.
+- Route a test monitor with a low `warn` threshold to the new notifier, let it fire once, then delete the test monitor.
 
 **Before you delete a notifier, find what uses it.** Alerts routed to a deleted notifier are dropped silently.
 
@@ -57,7 +86,10 @@ The create output has the notifier `id` (a UUID). Policies and monitors refer to
 NID=<notifier-id>
 oodle notification-policies list -o json | jq --arg n "$NID" '.[] | select([.notifiers[]?[]?] | index($n)) | {id, name}'
 oodle monitors list -o json | jq --arg n "$NID" '.[] | select([.notifications[]?.notifiers[]?[]?] | index($n)) | {id, name}'
+oodle synthetic-monitors list -o json | jq --arg n "$NID" '.[] | select([.notifications[]?.notifiers[]?[]?] | index($n)) | {id, name}'
 ```
+
+Move each of them to another notifier (`get` → edit → `update`), then delete the notifier.
 
 ## Notification Policies and Monitor Routing
 
@@ -74,7 +106,9 @@ A policy lists the notifiers for each severity. Put the pager in `critical` and 
 }
 ```
 
-A policy has no `matchers`, `receiver`, or `routes`. A monitor chooses where its alerts go in its `notifications` list. Each entry has label `matchers` and either a `notification_policy_id` or inline `notifiers`. The first entry whose matchers match the alert labels is used, so put specific entries first. An entry with empty matchers must be the last one.
+A policy has no `matchers`, `receiver`, or nested `routes`; it routes by severity only. Route by labels (team, env) in the monitor, as below. A monitor chooses where its alerts go in its `notifications` list. Each entry has label `matchers` and either a `notification_policy_id` or inline `notifiers`. The first entry whose matchers match the alert labels is used, so put specific entries first. An entry with empty matchers must be the last one.
+
+**Scope matchers to the smallest set of labels that identifies the team**, for example `team` and `env`. A matcher on `env=prod` only sends every production alert of the monitor to one place.
 
 ```json
 {
@@ -100,7 +134,8 @@ To change the routing of a monitor, `get` it, set `.notifications` with `jq`, an
 A muting rule silences alerts whose labels match the matchers, between `startsAt` and `endsAt` (RFC 3339).
 
 - **Always add the `_oodle_monitor_id` matcher.** Without it, the rule silences every alert that shares the other labels. Get the id from `oodle monitors list -o json | jq '.[] | {id,name}'`.
-- **Always set `endsAt`, after `startsAt`.** An open-ended mute becomes a permanent silence that nobody remembers.
+- **Always set `endsAt`, after `startsAt`.** Without `endsAt`, the mute stays in effect forever, and becomes a permanent silence on a critical alert that nobody remembers.
+- A recurring mute (for example, every night) uses `scheduleIds` instead of `startsAt` and `endsAt`. Copy the shape from `oodle muting-rules get <id> -o json` of an existing recurring rule.
 
 ```json
 {

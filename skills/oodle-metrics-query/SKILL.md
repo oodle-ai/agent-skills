@@ -12,7 +12,19 @@ metadata:
 
 # Oodle Metrics Query — PromQL Instant and Range Queries
 
-This skill teaches the agent to execute PromQL instant and range queries against Oodle metrics using the Prometheus-compatible query API. Setup, auth, time flag values, and common errors: see the oodle-cli skill.
+This skill teaches the agent to execute PromQL instant and range queries against Oodle metrics using the Prometheus-compatible query API.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle metrics query --query 'sum(up)' -o json | jq '.data.result'
+```
+
+Other install methods, auth details, and common errors: see the oodle-cli skill. `--time`, `--start`, and `--end` take `now`, a relative value (`-1h`), RFC 3339, or an epoch number.
 
 Confirm the metric names and labels first (see the oodle-metrics skill). A query on a metric that does not exist returns an empty result, not an error.
 

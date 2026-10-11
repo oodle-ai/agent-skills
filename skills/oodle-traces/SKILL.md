@@ -12,7 +12,19 @@ metadata:
 
 # Oodle Traces — Search, TraceQL, and Alerts
 
-This skill teaches the agent to search Oodle traces, to run TraceQL from the CLI, and to alert on traces. Setup, auth, time flag values, and common errors: see the oodle-cli skill.
+This skill teaches the agent to search Oodle traces, to run TraceQL from the CLI, and to alert on traces.
+
+## Prerequisites
+
+```bash
+brew install oodle-ai/oodle/oodle
+oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+
+# Check access
+oodle traces label-values resource::service.name --start -1h --end now -o json
+```
+
+Other install methods, auth details, time flag values, and common errors: see the oodle-cli skill.
 
 Facts to keep in mind:
 
@@ -23,7 +35,7 @@ Facts to keep in mind:
 
 ## Workflow
 
-1. Find the service: `oodle traces label-values service.name --start -1h --end now -o json`.
+1. Find the service: `oodle traces label-values resource::service.name --start -1h --end now -o json`. Trace labels carry a scope prefix (`resource::`, `span::`). A plain name such as `service.name` works only when one scope has it; otherwise the CLI asks you to choose. `oodle traces labels` lists the scoped names.
 2. Search with `oodle traces list --service <svc>` and at least one of `--operation`, `--min-duration`, or `--tags`. For other conditions, use `oodle traces traceql search`.
 3. For counts, rates, and latency over time, use `oodle traces traceql metrics` or PromQL on `oodle_trace_metrics`. Do not count traces from `list` output; `list` returns a limited sample.
 4. To inspect one trace: `oodle traces get <trace-id> --start -1h --end now -o json`.
@@ -40,7 +52,7 @@ Facts to keep in mind:
 | `--search` | Free-text search across trace data. |
 | `--limit` | Maximum number of traces. |
 
-There is no `--from`, `--to`, or `--error` flag. Always scope a list with `--service` and a short window; an unscoped list over days is slow and can time out. Filter on the server (`--tags`, `--min-duration`, TraceQL), not with `jq` on the client.
+There is no `--from`, `--to`, or `--error` flag. Always scope a list with `--service` and a short window (24 hours or less). An unscoped list over days is slow and can time out. For a longer period, run one list per window, or use TraceQL metrics or `oodle_trace_metrics` for counts. Filter on the server (`--tags`, `--min-duration`, TraceQL), not with `jq` on the client.
 
 `list` returns `{"data": [ <trace> ], "total": N, ...}`. Each trace has `traceID`, `spans`, and `processes`. Each span has `operationName`, `startTime` (epoch µs), `duration` (µs), `tags`, and `processID`. The service of a span is `processes[<processID>].serviceName`.
 
@@ -219,7 +231,8 @@ oodle metrics label-values oodle_genai_tool_call_total tool_name
 | `unknown flag: --from` / `--error` | Flags do not exist | Use `--start`/`--end`; use `--tags '{"span_status":"Error"}'` for errors |
 | 400 on `--min-duration` | Duration has no unit | Use `500ms`, `2s` |
 | 404 on `get` | Trace ID is wrong or past retention | List again with a recent `--start` |
-| Empty result | Wrong service name or time window | `oodle traces label-values service.name --start -1h --end now` |
+| Empty result | Wrong service name or time window | `oodle traces label-values resource::service.name --start -1h --end now` |
+| `trace label "service.name" is ambiguous` | The name is in more than one scope | Use the scoped name, for example `resource::service.name` |
 | `unknown trace label` | Label name is wrong | Run `oodle traces labels`; use the suggested name |
 | TraceQL `... is not supported` | Syntax from "Not supported yet" | Rewrite with the replacements in that table |
 | `search` rejects the query | It has a metrics function (`\| rate()` …) | Use `oodle traces traceql metrics` |
