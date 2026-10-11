@@ -1,142 +1,132 @@
 ---
 name: oodle-log-metrics
-description: Create and manage Oodle log metrics rules — turn log lines (plain text or JSON) into Prometheus metrics with filters, regex-extracted labels, and counters, gauges, or histograms. This is the first step of every alert on logs.
+description: Create and manage Oodle log-based metric rules — extract metrics from log streams using filters and labels. This is how to count, or alert on, values in log lines.
 metadata:
   version: "1.1.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
-  tags: oodle,log-metrics,logs,metrics,alerting
+  tags: oodle,log-metrics,logs,metrics
   globs: "**/*log-metric*,**/*logmetric*"
   alwaysApply: "false"
 ---
 
-# Oodle Log Metrics — Rules, Extraction, and Log Alerts
+# Oodle Log Metrics — Rules and Cardinality
 
-This skill teaches the agent to turn log lines into metrics, and to alert on logs. A log metrics rule selects lines with a filter, extracts label values and numbers with regex or JSON paths, and emits Prometheus metrics. A monitor then alerts on those metrics with PromQL. Safe delete and common errors: see the oodle-cli skill.
-
-Facts to keep in mind:
-
-- **You do not need a log transform.** A rule reads the raw line text with a regex. A log transform is only useful when you also want the value as a field in log search. Never tell the user that a log alert needs one.
-- **A rule works on plain-text lines.** For example, it can read the user from `credit exhausted for user=alice` or the duration from `tool Bash ok in 12345 ms`.
-- **A label can carry the user.** The monitor fires once per series, so a label extracted from the line (user, tool, tenant) names it in the alert.
-- **No backfill.** A rule applies only to logs that arrive after you create it. For past data, use `oodle logs query` (see the oodle-logs skill).
+This skill teaches the agent to convert log streams into metrics safely: validate the filter, narrow the `labels`, and avoid creating high-cardinality time series. A log metrics rule is also the way to count or alert on values inside log lines: a monitor alerts on the metric that the rule emits.
 
 ## Prerequisites
 
 ```bash
 brew install oodle-ai/oodle/oodle
-oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+oodle configure
+```
 
-# Check access
+Confirm the log-metrics endpoint works:
+
+```bash
 oodle log-metrics list -o json | jq 'length'
 ```
 
-Other install methods, auth details, and common errors: see the oodle-cli skill.
+## Command Execution Order
 
-## Workflow
+Before running any oodle command:
+1. Check whether the rule's filter and `labels` are already in context.
+2. If not, run a sample log query (e.g. `oodle logs query`, see the oodle-logs skill, or the log explorer) to verify the filter actually matches logs.
+3. Estimate cardinality: the distinct values of each label, multiplied together.
+4. Run `oodle log-metrics create -f rule.json` only after the filter is validated.
+5. Do not run `update` without first running `get` to capture the existing rule.
 
-1. Check that no rule counts these lines yet: `oodle log-metrics list -o json`. If one does, query its metric (`oodle_logs_<name>`) and stop.
-2. Find sample lines with `oodle logs query` (see the oodle-logs skill). Note the field that holds the text (usually `message`) and the exact text shape.
-3. Write the filter and the regexes, and test each regex on the samples (`grep -E`, `jq test()`). A regex that does not match gives an empty label and a value of 0, with no error.
-4. Estimate cardinality: the distinct values of each extracted label, multiplied together.
-5. `oodle log-metrics create -f rule.json`.
-6. After new lines arrive, confirm the metric: `oodle metrics names -o json | jq -r '.[] | select(startswith("oodle_logs_"))'`.
-7. To alert, create a monitor on the metric (see "Alerting on Logs").
+## Quick Reference
 
-`oodle log-metrics` (aliases `lm`, `logmetrics`) has `list`, `get <id>`, `create -f`, `update <id> -f`, and `delete <id>`.
+| Task | Command |
+|------|---------|
+| List rules | `oodle log-metrics list -o json` |
+| Get rule | `oodle log-metrics get <id> -o json` |
+| Create rule | `oodle log-metrics create -f rule.json` |
+| Update rule | `oodle log-metrics update <id> -f rule.json` |
+| Delete rule | `oodle log-metrics delete <id> --force` |
 
-## Rule Schema
+## Common Operations
+
+### Rule schema
 
 ```json
 {
-  "name": "credit-exhausted",
-  "filter": { "all": [ { "field": "message", "operator": "contains", "value": "credit exhausted" } ] },
+  "name": "http_errors_from_logs",
+  "filter": {
+    "all": [
+      {"field": "level", "operator": "is", "value": "error"},
+      {"field": "service", "operator": "is", "value": "api"}
+    ]
+  },
   "labels": [
-    { "name": "env", "value": "prod" },
-    { "name": "user", "valueExtractor": { "field": "message", "regex": "user=(\\S+)" } }
+    {"name": "service", "valueExtractor": {"field": "service"}},
+    {"name": "env", "valueExtractor": {"field": "env"}}
   ],
   "metricDefinitions": [
-    { "name": "credit_exhausted", "type": "log_count" }
+    {"name": "http_errors", "type": "log_count"}
   ]
 }
 ```
 
+Field meaning:
+
 | Field | Meaning |
 |-------|---------|
-| `name` | Name of the rule. Required. |
-| `filter` | Selects the log lines that the rule reads. If you omit it, the rule reads every line. |
-| `labels` | Labels added to every metric of the rule. Each has a static `value` or a `valueExtractor`, not both. |
-| `metricDefinitions` | One or more metrics to emit. At least one is required. |
+| `name` | Human identifier for the rule. Required. |
+| `filter` | Which log lines the rule reads. A condition `{"field", "operator", "value", "jsonPath"}`, or `{"all": [...]}` (AND), `{"any": [...]}` (OR), `{"not": <filter>}`. You can nest them. Operators: `is`, `contains`, `matches regex`, `exists`. There is no `!=`; use `not`. |
+| `labels` | Labels added to the emitted metrics. Each has a `name` and a static `value`, or a `valueExtractor` `{"field", "jsonPath", "regex"}`. |
+| `metricDefinitions` | The metrics to emit. At least one. Each has a `name` and a `type`: `log_count` (number of matching lines), `counter` (sum of a value), `gauge` (last value), or `histogram` (distribution of a value). `counter`, `gauge`, and `histogram` read the value from `field`, with an optional `jsonPath` or `regex`. |
 
-### Filters
+- `field` is a top-level log field: letters, digits, and underscores only. Read a nested JSON value with `jsonPath`, for example `{"field": "log", "jsonPath": "user.id"}`.
+- A `regex` uses Rust syntax. Capture group 1 is the value, so put one group around the part you need. In JSON, escape each backslash: `\d` is `"\\d"`.
+- When the regex does not match a line, the label is empty, and a value is `0`. So make the filter select only the lines that contain the value.
+- The emitted metric name is `oodle_logs_<name>` (`oodle_logs_http_errors`). A `histogram` emits `_bucket`, `_sum`, and `_count` series. Query `log_count` and `counter` with `increase(...)` or `rate(...)`, and aggregate with `sum by (...)`.
+- A rule applies only to logs that arrive after you create it. For past data, use `oodle logs query`.
+- Put a single condition inside an `all` list, as in the examples. That form works with every CLI and server version.
 
-A filter is a tree. A condition has `field`, `operator`, `value`, and an optional `jsonPath`. Combine with `{"all": [...]}` (AND), `{"any": [...]}` (OR), and `{"not": <condition or filter>}`. You can nest them.
+### Creating a rule
 
-**Put a single condition inside an `all` list:** `{"all": [{"field": "message", "operator": "contains", "value": "timeout"}]}`. Newer servers also accept a condition inline or wrapped in `{"match": {...}}`, but older servers ignore the `match` wrapper and older CLI versions drop an inline condition. The `all` form works everywhere.
+```bash
+# ✅ CORRECT — validate filter first, then create
+# (preview with the log explorer or `oodle logs query`)
+oodle log-metrics create -f rule.json
 
-| Operator | Meaning |
-|----------|---------|
-| `is` | The field value equals `value` exactly. |
-| `contains` | The field value contains `value`. The match ignores case. |
-| `matches regex` | The field value matches the regex in `value` (Rust regex syntax). |
-| `exists` | The field is present. No `value`. |
+# ❌ WRONG — creating with an untested filter; the resulting metric is silently empty
+oodle log-metrics create -f <(echo '{"name":"x","filter":{"all":[{"field":"levl","operator":"is","value":"eror"}]},"metricDefinitions":[{"name":"x","type":"log_count"}]}')
+```
 
-There is no `!=` operator. Use `{"not": {"field": ..., "operator": "is", "value": ...}}`.
+### Updating a rule
 
-### Fields
+```bash
+# ✅ CORRECT — get → edit → update
+oodle log-metrics get lm_123 -o json > rule.json
+jq '.labels = [{"name":"service","valueExtractor":{"field":"service"}},{"name":"env","valueExtractor":{"field":"env"}}]' rule.json > rule.new.json
+oodle log-metrics update lm_123 -f rule.new.json
 
-- `field` is a top-level log field name: letters, digits, and underscores only, not starting with a digit.
-- Plain-text lines are usually in `message`. Parsed JSON attributes are usually inside `log`; read a nested value with `jsonPath`, for example `{"field": "log", "jsonPath": "user.id"}`. This works in conditions and extractors.
-- Confirm field names with `oodle logs index-patterns -o json | jq '.[0].fields[].name'` and a sample from `oodle logs query`.
+# ❌ WRONG — partial payload removes existing fields (and has no `id`, so it is rejected)
+oodle log-metrics update lm_123 -f <(echo '{"labels":[{"name":"service","valueExtractor":{"field":"service"}}]}')
+```
 
-### Labels
+### Deleting a rule
 
-| Label kind | Shape |
-|------------|-------|
-| Static | `{"name": "team", "value": "billing"}` |
-| From a field | `{"name": "level", "valueExtractor": {"field": "level"}}` |
-| From JSON | `{"name": "user", "valueExtractor": {"field": "log", "jsonPath": "user_id"}}` |
-| From text with a regex | `{"name": "user", "valueExtractor": {"field": "message", "regex": "user=(\\S+)"}}` |
+```bash
+# ✅ CORRECT — verify and delete
+oodle log-metrics get lm_123 -o json > /dev/null
+oodle log-metrics delete lm_123 --force
 
-When the regex does not match a line, the label is empty for that line.
+# ❌ WRONG — speculative delete by name match
+oodle log-metrics delete "$(oodle log-metrics list | grep errors | awk '{print $1}')" --force
+```
 
-### Metric definitions
+### Alerting on log lines
 
-| `type` | What it emits | Value source |
-|--------|---------------|--------------|
-| `log_count` | Number of lines that match the filter. | None. Do not set `field`, `jsonPath`, or `regex`. |
-| `counter` | Sum of the extracted values. | `field`, plus an optional `jsonPath` or `regex`. |
-| `gauge` | Last extracted value. | `field`, plus an optional `jsonPath` or `regex`. |
-| `histogram` | Distribution of the extracted values. | `field`, plus an optional `jsonPath` or `regex`. |
+A monitor runs PromQL, not a log query. To alert on log lines, create a log metrics rule, then a monitor on the metric it emits (see the oodle-monitors skill). A rule reads the raw line text with a regex, so this works for plain-text lines, and you do not need a log transform. A label extracted from the line (user, tool, tenant) names the series in the alert.
 
-Value extraction rules:
-
-- Use `jsonPath` or `regex`, not both.
-- **The regex uses Rust syntax, and only capture group 1 is used** (the label value, or the number). Use `(?:...)` for groups that must not capture. Look-around is not supported.
-- **When the regex does not match, or the text is not a number, the value is 0.** So make the filter select only lines that contain the number (a `matches regex` filter that requires it). If not, every other line adds a 0 sample.
-- In JSON, escape each backslash: `\d` is `"\\d"`.
-
-### Metric names in PromQL
-
-- The emitted name is `oodle_logs_<metric name>`. The prefix is added for you; `get` shows the stored name with the prefix.
-- `log_count` and `counter` keep that name with no `_total` suffix (`oodle_logs_credit_exhausted`). Query them with `increase(...)` or `rate(...)`. A `gauge` keeps the name; query it directly.
-- A `histogram` emits `oodle_logs_<name>_bucket` (with `le`), `_sum`, and `_count`. The default bucket bounds are powers of two from about 0.1 to about 131072 (…, 4096, 8192, 16384, …), in the unit of your values. Check them with `oodle metrics label-values oodle_logs_<name>_bucket le`.
-- Every series also has an `oodle_host` label. **Always aggregate with `sum by (...)`** over the labels you need, or one event shows as several series.
-
-## Alerting on Logs
-
-1. **Create a log metrics rule** that counts the lines, or extracts a value from them.
-2. **Create a monitor** with PromQL on the emitted metric (see the oodle-monitors skill). Monitors run PromQL only.
-
-The monitor fires once per series that crosses the threshold. Keep the label in the PromQL (`sum by (user)`) so the notification names the user.
-
-### Example A — count matching lines, labelled by user
-
-Sample lines:
+Example: one alert per user whose credit ran out, from lines like:
 
 ```text
 2026-10-07T10:12:03Z WARN credit exhausted for user=alice plan=pro
-2026-10-07T10:14:41Z WARN credit exhausted for user=bob plan=free
 ```
 
 `credit-exhausted.json`:
@@ -144,55 +134,48 @@ Sample lines:
 ```json
 {
   "name": "credit-exhausted",
-  "filter": {
-    "all": [ { "field": "message", "operator": "contains", "value": "credit exhausted" } ]
-  },
+  "filter": {"all": [{"field": "message", "operator": "contains", "value": "credit exhausted"}]},
   "labels": [
-    { "name": "user", "valueExtractor": { "field": "message", "regex": "user=(\\S+)" } },
-    { "name": "plan", "valueExtractor": { "field": "message", "regex": "plan=(\\S+)" } }
+    {"name": "user", "valueExtractor": {"field": "message", "regex": "user=(\\S+)"}}
   ],
-  "metricDefinitions": [
-    { "name": "credit_exhausted", "type": "log_count" }
-  ]
+  "metricDefinitions": [{"name": "credit_exhausted", "type": "log_count"}]
 }
 ```
 
-`credit-exhausted-monitor.json` (fires when a user runs out of credit; `op` 2 means `>`):
+`credit-exhausted-monitor.json` (`op` 2 is `>`):
 
 ```json
 {
   "name": "Credit exhausted",
-  "promql_query": "sum by (user, plan) (increase(oodle_logs_credit_exhausted[10m]))",
-  "conditions": { "critical": { "op": 2, "value": 0 } },
-  "labels": { "team": "billing", "env": "prod" },
-  "annotations": { "summary": "User {{ $labels.user }} ({{ $labels.plan }}) ran out of credit" }
+  "promql_query": "sum by (user) (increase(oodle_logs_credit_exhausted[10m]))",
+  "conditions": {"critical": {"op": 2, "value": 0}},
+  "labels": {"team": "billing", "env": "prod"},
+  "annotations": {"summary": "User {{ $labels.user }} ran out of credit"}
 }
 ```
 
 ```bash
 oodle log-metrics create -f credit-exhausted.json
 oodle monitors create -f credit-exhausted-monitor.json
+# Later: whose credit ran out in the last 24 hours
+oodle metrics query --query 'sum by (user) (increase(oodle_logs_credit_exhausted[24h])) > 0' -o json
 ```
 
-A label per user is fine here because the event is rare. See "Cardinality".
+A label per user is fine here because the event is rare (see "Keep `labels` to 2–3 low-cardinality labels").
 
-### Example B — tool latency from lines like `tool Bash ok in 12345 ms`
-
-One regex per value, each with one capture group:
+Example: a value inside the line, such as the duration in `tool Bash ok in 12345 ms`. Use one regex per value, each with one capture group, and a filter that requires the value:
 
 ```json
 {
   "name": "tool-latency",
-  "filter": {
-    "all": [ { "field": "message", "operator": "matches regex", "value": "tool \\S+ (?:ok|failed) in \\d+ ms" } ]
-  },
+  "filter": {"all": [{"field": "message", "operator": "matches regex", "value": "tool \\S+ (?:ok|failed) in \\d+ ms"}]},
   "labels": [
-    { "name": "tool", "valueExtractor": { "field": "message", "regex": "tool (\\S+) " } },
-    { "name": "status", "valueExtractor": { "field": "message", "regex": " (ok|failed) in " } }
+    {"name": "tool", "valueExtractor": {"field": "message", "regex": "tool (\\S+) "}},
+    {"name": "status", "valueExtractor": {"field": "message", "regex": " (ok|failed) in "}}
   ],
   "metricDefinitions": [
-    { "name": "tool_calls", "type": "log_count" },
-    { "name": "tool_duration_ms", "type": "histogram", "field": "message", "regex": " in (\\d+) ms" }
+    {"name": "tool_calls", "type": "log_count"},
+    {"name": "tool_duration_ms", "type": "histogram", "field": "message", "regex": " in (\\d+) ms"}
   ]
 }
 ```
@@ -204,42 +187,77 @@ histogram_quantile(0.95, sum by (le, tool) (rate(oodle_logs_tool_duration_ms_buc
 sum by (tool) (increase(oodle_logs_tool_calls{status="failed"}[10m]))
 ```
 
-Histogram buckets give only an approximate threshold (8192 or 16384 ms, not 10000 ms). **For an exact "over 10 s" count, add a `log_count` rule whose filter matches only slow calls**, for example the filter regex `tool \S+ (?:ok|failed) in \d{5,} ms` (10000 ms or more). The same pattern reads `key=value` lines: for `took_ms=1234`, use the value regex `took_ms=(\d+)`, and the filter regex `took_ms=\d{5,}\b` for "over 10 s".
+## Best Practices
 
-## Cardinality
+### Validate the `filter` against real log volume before creating the rule
 
-Each distinct label value makes a new series.
+A typo in the filter (`levl=eror`) creates a rule that silently emits zero data points.
 
-- ✅ OK: user id on a rare event (credit refusals, failed payments, a few lines a day).
-- ❌ Not OK: user id, request id, trace id, or a URL path with ids on a high-volume line (every request, every tool call).
+```bash
+# ✅ CORRECT — preview matching log volume in the log explorer first;
+# only then run `oodle log-metrics create`
+# (or run `oodle logs query` with the same condition and confirm count > 0)
 
-For high-volume lines, keep labels to a few low-cardinality values (`tool`, `status`, `env`), and find the user of a single event in log search.
+# ❌ WRONG — create the rule, then notice the dashboard panel is empty next week
+oodle log-metrics create -f rule.json
+```
 
-## Updating a Rule
+### Keep `labels` to 2–3 low-cardinality labels
 
-`update` replaces the whole rule, and the body must contain an `id` equal to the `<id>` argument. Use `get` → edit → `update`. An older CLI can show an empty filter in `get` for a rule with an inline condition; do not `update` from that output. Upgrade the CLI, or edit the rule in the Oodle UI.
+Each label multiplies the time-series count. Avoid `request_id`, `user_id`, `trace_id`, `path` (with IDs). A user label is fine only on a rare event, such as credit refusals.
 
-```text
-# ❌ WRONG — the schema is not a string expression with groupBy
-{"name":"x","filter":"level=error AND service=api","groupBy":["service"],"metricName":"x"}
+```bash
+# ✅ CORRECT — bounded labels
+"labels": [{"name": "service", "valueExtractor": {"field": "service"}}, {"name": "env", "valueExtractor": {"field": "env"}}]
+
+# ❌ WRONG — `user_id` on every request blows up cardinality (one series per user)
+"labels": [{"name": "service", "valueExtractor": {"field": "service"}}, {"name": "user_id", "valueExtractor": {"field": "user_id"}}]
+```
+
+### Always `get` before `update` to preserve fields
+
+`update` replaces the document. Sending a single field nulls everything else.
+
+```bash
+# ✅ CORRECT
+oodle log-metrics get lm_123 -o json > rule.json
+jq '.filter.all += [{"field": "status", "operator": "matches regex", "value": "^5"}]' rule.json > rule.new.json
+oodle log-metrics update lm_123 -f rule.new.json
+
+# ❌ WRONG — clobbers labels and metricDefinitions
+oodle log-metrics update lm_123 -f <(echo '{"filter":{"all":[{"field":"level","operator":"is","value":"error"}]}}')
+```
+
+### Use a stable, descriptive metric name
+
+The emitted name is `oodle_logs_<name>`. A `<domain>_<measurement>` name makes the metric easy to find in dashboards and drop rules. Use only letters, digits, and underscores.
+
+```bash
+# ✅ CORRECT
+"metricDefinitions": [{"name": "http_errors", "type": "log_count"}]
+
+# ❌ WRONG — generic name collides with other rules
+"metricDefinitions": [{"name": "errors", "type": "log_count"}]
 ```
 
 ## Failure Handling
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| 400 `Name is required` / `At least one MetricDefinition is required` | Missing required field | Add `name` and at least one `metricDefinitions` entry |
-| 400 `Match must have a valid Operator` | Operator is not `is`, `contains`, `matches regex`, or `exists` | Use one of the four. For "not equal", wrap the condition in `not` |
-| Rule counts every line | An older server or CLI dropped a `match` wrapper or an inline condition | Put the condition inside `{"all": [ ... ]}` |
-| 400 `is not a valid rust regex` | Regex syntax error, or a JSON escape is missing | Escape backslashes in JSON (`\\d`); no look-around |
+| 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
+| 404 Not Found | Log-metric rule ID does not exist | Verify with `oodle log-metrics list -o json` |
+| connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
+| 400 `Match must have a valid Operator` | Operator is not `is`, `contains`, `matches regex`, or `exists` | Use one of the four; for "not equal", wrap the condition in `not` |
 | 400 `Field ... must contain only alphanumeric characters and underscores` | Dotted field name in `field` | Use the top-level field and put the path in `jsonPath` |
-| 400 `'logCount' metric definition has a Field` | `log_count` has `field`, `jsonPath`, or `regex` | Remove them |
-| 400 on update: ID mismatch | Body `id` is missing or differs from `<id>` | Run `get` and edit that output |
-| Metric has no data | No new matching lines since creation, or the filter does not match | Rules do not backfill. Check the filter with `oodle logs query` |
-| Label is empty / values are all 0 | The regex does not match, or group 1 is not a number | Test the regex on sample lines; make the filter require the number |
-| Too many series | High-cardinality extracted label | Remove the label, or narrow the filter to rare events |
+| 400 `Regex ... is not a valid rust regex` | Regex syntax error, or a JSON escape is missing | Escape backslashes in JSON (`\\d`); no look-around |
+| 400 `'logCount' metric definition has a Field, JSONPath, or Regex` | `log_count` has `field`, `jsonPath`, or `regex` | Remove them |
+| 400 `Log Metrics ID in path and body don't match` | Body `id` is missing or differs from `<id>` | Run `get` and edit that output |
+| Metric exists but has no data points | Filter doesn't match any logs, or no new lines since the rule was created | Re-test the filter in the log explorer or with `oodle logs query`; check field names match the log schema. Rules do not backfill |
+| Label is empty / values are all 0 | The regex does not match, or group 1 is not a number | Test the regex on sample lines; make the filter require the value |
+| Cardinality alarm in the UI | `labels` includes a high-cardinality field | Edit the rule to drop that label; old series age out at the regular retention |
+| 429 Too Many Requests | Bulk rule creation | Add `--retries 3`, throttle to <10 creates per second |
 
 ## References
 
-- [Oodle docs: Log Metrics](https://docs.oodle.ai/log-management/log-metrics)
-- [Rust regex syntax](https://docs.rs/regex/latest/regex/#syntax)
+- [Oodle CLI repo](https://github.com/oodle-ai/oodle-cli)
+- [Oodle docs](https://docs.oodle.ai)

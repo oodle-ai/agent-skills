@@ -18,37 +18,96 @@ This skill teaches the agent to execute PromQL instant and range queries against
 
 ```bash
 brew install oodle-ai/oodle/oodle
-oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
-
-# Check access
-oodle metrics query --query 'sum(up)' -o json | jq '.data.result'
+oodle configure
 ```
 
-Other install methods, auth details, and common errors: see the oodle-cli skill. `--time`, `--start`, and `--end` take `now`, a relative value (`-1h`), RFC 3339, or an epoch number.
+Confirm the query endpoint works:
 
-Confirm the metric names and labels first (see the oodle-metrics skill). A query on a metric that does not exist returns an empty result, not an error.
+```bash
+oodle metrics query --query "up" -o json | jq '.status'
+```
+
+## Command Execution Order
+
+Before running any query command:
+1. Check whether the required metric name is already known.
+2. If not, run `oodle metrics names --start -1h --end now` to discover metric names.
+3. Run `oodle metrics labels <name> --start -1h --end now` to discover available labels.
+4. Build the PromQL expression using only confirmed metric names and labels.
+5. Do not run speculative queries — always confirm metric and label existence first.
 
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| Instant query (now) | `oodle metrics query --query "sum(up)" -o json` |
-| Instant query at a time | `oodle metrics query --query "up" --time -5m -o json` |
-| Range query | `oodle metrics query-range --query "rate(http_requests_total[5m])" --start -1h --end now --step 60s -o json` |
-| Range query, partial response | Add `--partial-response` |
+| Instant PromQL query | `oodle metrics query --query "sum(up)" -o json` |
+| Instant query at specific time | `oodle metrics query --query "up" --time 1700000000 -o json` |
+| Range PromQL query | `oodle metrics query-range --query "rate(http_requests_total[5m])" --start -1h --end now --step 60s -o json` |
+| Range query with partial response | `oodle metrics query-range --query "up" --start -1h --end now --step 60s --partial-response -o json` |
 
-Both commands need `--query`. `query-range` defaults to `--start -1h --end now --step 60s`.
+## Common Operations
 
-## Choosing the Step
+### Instant query
 
-The step sets the resolution. Aim for a few hundred points per series:
+Evaluate a PromQL expression at a single point in time. Returns the current value by default, or the value at a specific timestamp.
 
 ```bash
-# ✅ CORRECT — 1h at 60s (60 points); 24h at 5m (288 points)
+# CORRECT — instant query with JSON output for scripting
+oodle metrics query --query "sum(up)" -o json
+
+# CORRECT — instant query at a specific time
+oodle metrics query --query "up{job=\"prometheus\"}" --time 1700000000 -o json
+
+# CORRECT — use relative time
+oodle metrics query --query "up" --time -5m -o json
+
+# WRONG — omitting --query flag
+oodle metrics query -o json
+```
+
+### Range query
+
+Evaluate a PromQL expression over a time range. Only `--query` is required. `--start`, `--end`, and `--step` default to `-1h`, `now`, and `60s`. Time flags take `now`, a relative value (`-1h`, `-7d`), RFC 3339, or an epoch timestamp.
+
+```bash
+# CORRECT — range query over the last hour with 60-second resolution
+oodle metrics query-range --query "rate(http_requests_total[5m])" --start -1h --end now --step 60s -o json
+
+# CORRECT — range query with absolute timestamps
+oodle metrics query-range --query "up" --start 1700000000 --end 1700003600 --step 60s -o json
+
+# CORRECT — enable partial response for degraded-mode queries
+oodle metrics query-range --query "up" --start -1h --end now --step 60s --partial-response -o json
+```
+
+## Best Practices
+
+### Use `oodle metrics` to discover before querying
+
+Always confirm metric names and labels exist before building a PromQL query. Querying a nonexistent metric returns empty results, not an error.
+
+```bash
+# CORRECT — discover first, then query
+oodle metrics names --start -1h --end now -o json | jq '.[] | select(startswith("http"))'
+oodle metrics labels http_requests_total --start -1h --end now
+oodle metrics query --query "sum(rate(http_requests_total[5m]))" -o json
+
+# WRONG — guessing metric names
+oodle metrics query --query "sum(rate(requests_total[5m]))" -o json
+```
+
+### Choose the right step for range queries
+
+The step determines the resolution of the returned time series. Too small a step returns excessive data; too large a step misses detail.
+
+```bash
+# CORRECT — 60s step for a 1-hour window (60 data points)
 oodle metrics query-range --query "up" --start -1h --end now --step 60s -o json
+
+# CORRECT — 5m step for a 24-hour window (288 data points)
 oodle metrics query-range --query "up" --start -1d --end now --step 5m -o json
 
-# ❌ WRONG — 24h at 1s (86400 points)
+# WRONG — 1s step for a 24-hour window (86400 data points — too many)
 oodle metrics query-range --query "up" --start -1d --end now --step 1s -o json
 ```
 
@@ -56,10 +115,15 @@ oodle metrics query-range --query "up" --start -1d --end now --step 1s -o json
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| 400 Bad Request | Invalid PromQL | Check the syntax |
-| Empty result | Metric does not exist, or no data in the range | `oodle metrics names` to verify; widen the range |
-| `required flag "query"` | Missing flag | Add `--query '<promql>'` |
+| 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
+| 400 Bad Request | Invalid PromQL expression | Check syntax at https://prometheus.io/docs/prometheus/latest/querying/basics/ |
+| Empty result (not an error) | Metric does not exist or no data in time range. An instant query reads only the last 5 minutes before `--time` | Run `oodle metrics names` to verify the metric exists; widen the time range, or use `query-range --start -7d` for sparse metrics |
+| connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var, ensure no trailing slash |
+| 429 Too Many Requests | Rate limited | Add `--retries 3`, back off, reduce query frequency |
+| `required flag(s) "query" not set` | Missing required flag | Add `--query` flag with a PromQL expression |
 
 ## References
 
+- [Oodle CLI repo](https://github.com/oodle-ai/oodle-cli)
+- [Oodle docs](https://docs.oodle.ai)
 - [PromQL documentation](https://prometheus.io/docs/prometheus/latest/querying/basics/)

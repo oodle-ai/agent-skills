@@ -12,66 +12,160 @@ metadata:
 
 # Oodle Metrics — Discovery and Querying
 
-This skill teaches the agent to find metric names, enumerate their labels, and build PromQL queries that return data on the first try. To run the queries, see the oodle-metrics-query skill.
+This skill teaches the agent to find metric names, enumerate their labels, and build PromQL queries that return data on the first try.
 
 ## Prerequisites
 
 ```bash
 brew install oodle-ai/oodle/oodle
-oodle configure   # or set OODLE_API_KEY, OODLE_INSTANCE, and OODLE_DEPLOYMENT
+oodle configure
+```
 
-# Check access
+Confirm the metrics endpoint works:
+
+```bash
 oodle metrics names -o json | jq 'length'
 ```
 
-Other install methods, auth details, and common errors: see the oodle-cli skill.
+## Command Execution Order
+
+Before running any oodle command:
+1. Check whether the required metric name is already in context.
+2. If not, run `oodle metrics names -o json | jq -r '.[] | select(startswith("<prefix>"))'` to discover it.
+3. Run `oodle metrics labels <name>` to enumerate labels.
+4. Run `oodle metrics label-values <name> <label>` to enumerate the values you need to filter on.
+5. Build the PromQL query using only labels confirmed in step 3 and values confirmed in step 4.
 
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| Metric names with a prefix | `oodle metrics names -o json \| jq -r '.[] \| select(startswith("<prefix>"))'` |
-| Metric names over a longer range | `oodle metrics names --start -24h --end now -o json` |
-| Labels of a metric | `oodle metrics labels <name>` |
-| Values of a label | `oodle metrics label-values <name> <label>` |
+| List metric names (filtered) | `oodle metrics names -o json \| jq -r '.[] \| select(startswith("<prefix>"))'` |
+| List metric names (longer range) | `oodle metrics names --start -24h --end now -o json` |
+| List labels for a metric | `oodle metrics labels <name>` |
+| List values for a label | `oodle metrics label-values <name> <label>` |
 
-`names`, `labels`, and `label-values` read only series that have samples in the time range, and the default range is the last hour. A metric, label, or value with no samples in the range is not listed, even if it exists. Metrics from rare events (log metrics, error counters) are often sparse, so widen the range (for example `--start -7d`) before you decide that something does not exist. There is no `metrics list`, `metrics get`, `--match`, or `--limit`.
+`names`, `labels`, and `label-values` read only series that have samples in the time range. The default range is the last hour. Metrics from rare events (log metrics, error counters) are often sparse, so widen the range (for example `--start -7d`) before you decide that a metric, label, or value does not exist.
 
-## The 3-step Discovery Workflow
+## Common Operations
 
-Run these in order before you write PromQL for a metric you have not used before. Guessed label names give queries that return no data and look like a missing metric.
+### The 3-step label discovery workflow
+
+Always run these three commands in order before writing a PromQL expression for a metric you have not used before.
 
 ```bash
-# 1 — find the metric name (filter with jq; the full list can be thousands of names)
+# Step 1 — find the metric name
 oodle metrics names -o json | jq -r '.[] | select(startswith("http_requests"))'
-# 2 — list its labels
+# returns e.g. ["http_requests_total", "http_requests_in_flight"]
+
+# Step 2 — list available labels
 oodle metrics labels http_requests_total
-# 3 — list the values of a label
+# returns e.g. ["service", "method", "status", "env"]
+
+# Step 3 — list values for a label
 oodle metrics label-values http_requests_total service
+# returns e.g. ["api", "checkout", "auth"]
 ```
 
-```promql
-# ✅ CORRECT — built from confirmed labels and values
+```bash
+# ✅ CORRECT — query built from confirmed labels and values
 sum by (service) (rate(http_requests_total{service="api",env="prod",status=~"5.."}[5m]))
 
-# ❌ WRONG — guessed names; returns no data
+# ❌ WRONG — guessing label names; query returns no data
 sum by (svc) (rate(http_requests{app="api",environment="production",http_status=~"5.."}[5m]))
+```
+
+### Filtering metric lists
+
+```bash
+# ✅ CORRECT — narrow by prefix with jq
+oodle metrics names -o json | jq -r '.[] | select(startswith("http_requests"))'
+
+# ✅ CORRECT — widen the time range when sweeping a namespace
+oodle metrics names --start -24h --end now -o json | jq -r '.[] | select(startswith("kube_"))'
+
+# ❌ WRONG — printing every metric in the system
+oodle metrics names -o json
+```
+
+### Cardinality-aware querying
+
+Before grouping by a label, confirm cardinality is bounded:
+
+```bash
+# ✅ CORRECT — confirm `service` has <100 values before grouping by it
+oodle metrics label-values http_requests_total service | wc -l
+
+# ❌ WRONG — grouping by a high-cardinality label like `request_id` melts the query
+sum by (request_id) (rate(http_requests_total[5m]))
 ```
 
 ## Best Practices
 
-- **Check cardinality before you group by a label:** `oodle metrics label-values <name> <label> | wc -l`. Grouping by a high-cardinality label such as `request_id` makes the query slow or time out.
-- **Use `rate(...[5m])`, not `[1m]`.** `[1m]` rates are noisy on low-volume series and break when one scrape is missed.
+### Always filter by prefix when listing metrics
+
+The metrics namespace can be large; an unfiltered `oodle metrics names` is noisy.
+
+```bash
+# ✅ CORRECT
+oodle metrics names -o json | jq -r '.[] | select(startswith("http_requests"))'
+
+# ❌ WRONG — returns thousands of results
+oodle metrics names -o json
+```
+
+### Run the 3-step discovery workflow before writing PromQL
+
+Guessed label names produce queries that return no data and look like a metric is missing.
+
+```bash
+# ✅ CORRECT — labels confirmed by step 2, values confirmed by step 3
+oodle metrics labels http_requests_total
+oodle metrics label-values http_requests_total service
+sum by (service) (rate(http_requests_total{service="api"}[5m]))
+
+# ❌ WRONG — writing the query first, then debugging "why is it empty?"
+sum by (service_name) (rate(http_request_count{service_name="api"}[5m]))
+```
+
+### Always pipe to `jq` for scripting, never parse table output
+
+Column ordering and widths in table output are not stable.
+
+```bash
+# ✅ CORRECT
+oodle metrics names -o json | jq -r '.[] | select(startswith("http_"))'
+
+# ❌ WRONG
+oodle metrics names | tail -n +2 | awk '{print $1}'
+```
+
+### Prefix every counter rate with `rate(...[5m])` not `rate(...[1m])`
+
+`[1m]` rates are noisy on low-volume series and don't smooth across scrape gaps.
+
+```bash
+# ✅ CORRECT
+sum by (service) (rate(http_requests_total[5m]))
+
+# ❌ WRONG — flapping graphs, false alerts when a single scrape is missed
+sum by (service) (rate(http_requests_total[1m]))
+```
 
 ## Failure Handling
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| Metric, label, or value not found | It does not exist, or has no samples in the range | Retry with `--start -7d --end now` before you conclude it does not exist |
-| Empty query result | Wrong label name or value | Run step 2 and step 3 again; fix the selector |
-| Query timeout | High-cardinality `by (...)` | Remove high-cardinality labels; use a shorter time range |
-| `parse error` | Broken PromQL syntax | Fix the expression; test it with `oodle metrics query` |
+| 401 Unauthorized | Invalid or missing API key | Run `oodle configure` or set `OODLE_API_KEY` |
+| `No labels for this metric` or an empty list | Metric name does not exist, or has no samples in the time range | Run `oodle metrics names` to find the correct name; retry with `--start -7d` |
+| connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var |
+| Empty result from a query | Wrong label name or wrong label value | Re-run step 2 (`labels`) and step 3 (`label-values`); fix the selector |
+| Query timeout | Cardinality too high (e.g. `by (request_id)`) | Drop high-cardinality labels from `by (...)`; add a tighter time window |
+| `parse error` | Broken PromQL syntax | Validate the expression in the UI metrics explorer first |
+| 429 Too Many Requests | Heavy concurrent label-values calls | Add `--retries 3`; cache label-values output in scripts |
 
 ## References
 
+- [Oodle CLI repo](https://github.com/oodle-ai/oodle-cli)
+- [Oodle docs](https://docs.oodle.ai)
 - [PromQL reference](https://prometheus.io/docs/prometheus/latest/querying/basics/)
