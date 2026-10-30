@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "Oodle observability platform skills for AI coding assistants",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "oodle-agent-skills",
       "source": "./",
       "description": "Oodle observability skills — monitors, dashboards, alerting, metrics, traces, logs, drop rules, onboarding, and the o11y-in-SDLC workflow (context manifest, telemetry review, triage).",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": { "name": "Oodle", "email": "support@oodle.ai" },
       "homepage": "https://github.com/oodle-ai/agent-skills",
       "repository": "https://github.com/oodle-ai/agent-skills",
