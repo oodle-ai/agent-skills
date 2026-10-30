@@ -32,7 +32,7 @@ With a login, `get-setup-spec` fills in the values of the instance (instance ID,
    - Every other `{{name}}`: a value of the user's system. Its source is in `requirements.templateVariables`. Find it in the inventory, or ask in step 4.
    - Placeholders in other syntaxes (`${{ secrets.X }}`, `{{.Comm}}`, `${VAR}`) belong to the user's tools. Keep them.
 6. **Change the code, not the system.** Edit the files that define the system: app code, IaC, Helm values, task definitions, config files. Read `references/infrastructure-as-code.md` before you change Terraform, CloudFormation, CDK, Pulumi, Helm or Kustomize, and `references/gotchas.md` before you run anything. Run only the local checks that need no apply (`terraform validate`, `helm template`, `cdk synth`, a build, a test).
-7. **Hand over the deploy.** Show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install`, a merge that starts the pipeline, a restart of the app). The spec steps that deploy something go in this list: do not run them. Tell the user to deploy and to tell you when it is done.
+7. **Hand over the deploy.** Show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install`, a merge that starts the pipeline, a restart of the app). The spec steps that deploy something go in this list: do not run them. Tell the user to deploy and to tell you when it is done. Only for a local, throwaway target can you run the deploy yourself, when the user asks (see "Change code, do not deploy").
 8. **Verify each signal** after the user says that the deploy is done. Run the `validation.checks` of the method, then `references/post-install-validation.md`. A signal is done only when its data is in Oodle.
 9. **Summarize.** For each signal: the status, what changed (files), what the user must still deploy, what is not done and why, and how to check later (`oodle integrations list`).
 
@@ -65,6 +65,7 @@ The customer owns their deploys: their pipeline, their approvals, their maintena
 - Do not commit, push or open a PR unless the customer asks. Tell them which files changed.
 - You can run read-only commands (list, get, describe, `terraform plan`, `helm template`) and local checks (build, test, lint, `validate`).
 - Changes in the Oodle account with the `oodle` CLI (an API key, `import-assets`, `s3-logs add`) are not a deploy of the customer's system. Show each one and run it after the customer agrees.
+- One exception: a local, throwaway target. When the customer asks you to start it, you can run `docker compose up` on their own machine, or `helm` / `kubectl` on a local kind, minikube, k3d or Docker Desktop cluster. Before you run a cluster command, run `kubectl config current-context` and make sure that it names the local cluster. Nobody else uses these targets, and the customer can delete them, so a fast first check is worth more than a handover. Never do this for a shared or production target, for `terraform apply` or other IaC applies, or for cloud CLI changes, also when the customer asks: give those commands to the customer.
 
 ### Change the system of record
 
