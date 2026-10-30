@@ -1,6 +1,6 @@
 # Post-Install Validation with Query Skills
 
-After the integration status shows `RECEIVING`, verify that data is actually queryable on the Oodle side. Use the companion query skills to confirm each signal type that the integration supports.
+Verify that the data is queryable on the Oodle side. A query that returns data is the check. The integration status is not: many integrations have none, and the metrics status can show `NOT_RECEIVING` for a minute or two after the first data arrives. Use the companion query skills to confirm each signal type that the integration supports.
 
 ## Validation Queries by Signal Type
 
