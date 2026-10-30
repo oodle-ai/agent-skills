@@ -1,6 +1,6 @@
 # Infrastructure as Code and Deploy Paths
 
-Most customer systems are deployed from code. A setup that changes the live resources and not the code is lost at the next deploy, and it can break the next `terraform apply`. Put each change where the customer's system is defined.
+Most customer systems are deployed from code. A setup that changes the live resources and not the code is lost at the next deploy, and it can break the next `terraform apply`. Put each change where the customer's system is defined. You change the code; the customer applies it. Never run an apply or a deploy yourself.
 
 ## Find out how changes reach production
 
@@ -14,19 +14,17 @@ Ask: "I will change `<files>`. Do you apply these through `<pipeline>`, or local
 
 ## When a pipeline applies
 
-1. Make the change in the code, on a new branch.
+1. Make the change in the code.
 2. Run the checks that need no credentials: `terraform fmt`, `terraform validate`, `helm template`, `cdk synth`.
-3. Open a PR, or give the diff if you cannot open one. Say what the change does and how to roll it back.
-4. Stop and tell the customer what to do next ("merge the PR, and tell me when the deploy is done"). Validate the signal after they confirm.
-
-Do not apply from the laptop at the same time as the pipeline. Two applies on the same state can conflict, and a local apply can use different variables.
+3. Give the diff. Say what the change does and how to roll it back. Commit, push or open a PR only if the customer asks.
+4. Stop and tell the customer what to do next ("merge the change, and tell me when the deploy is done"). Validate the signal after they confirm.
 
 ## When a person applies
 
 1. Make the change in the code.
-2. Run the plan (`terraform plan`, `cdk diff`, `helm diff upgrade` or `helm template`) and show the summary: what is added, changed and removed.
-3. If the plan changes or removes resources that are not part of this setup, stop and show them. This is drift or other work in progress, and it is not your change to apply.
-4. Apply only after the customer confirms.
+2. If the customer's credentials are set, run the plan (`terraform plan`, `cdk diff`, `helm diff upgrade` or `helm template`) and show the summary: what is added, changed and removed.
+3. If the plan changes or removes resources that are not part of this setup, say so. This is drift or other work in progress, and the customer must decide about it before they apply.
+4. Give the exact apply command (`terraform apply`, `helm upgrade --install ... --values <file>`). The customer runs it and tells you when it is done.
 
 ## Where the Oodle settings go
 
@@ -35,6 +33,6 @@ Do not apply from the laptop at the same time as the pipeline. Two applies on th
 - **Helm**: put the values in the values file that the customer's release uses. Put the key in an existing Secret, or in the Secret that the spec says.
 - **CloudFormation / CDK / Pulumi**: make the same change in the template or the code, with a parameter or a config value for the key.
 
-## Use a cloud CLI only when no code manages the resource
+## No code manages the resource
 
-If no code manages the resource (the console made it, for example), a CLI command is acceptable after the customer agrees. Tell the customer that the resource is not in code, so that they can import it later.
+If no code manages the resource (the console made it, for example), give the customer the cloud CLI command or the console steps from the spec to run. Tell them that the resource is not in code, so that they can import it later.

@@ -8,7 +8,7 @@ version: 1.2.0
 
 Connect a customer's apps and infrastructure to Oodle with `oodle integrations` commands and the setup specs they serve.
 
-**The setup spec decides the method. The customer decides the scope.** Oodle knows which collector, image, config and key handling work for each platform, and the spec holds those decisions. The customer knows which services, environments and deploy path to use. Ask the customer only about their part. Every extra question, and every path that is not in the spec, makes the setup slower and more fragile.
+**The setup spec decides the method. The customer decides the scope. The customer deploys.** Oodle knows which collector, image, config and key handling work for each platform, and the spec holds those decisions. The customer knows which services, environments and deploy path to use. Ask the customer only about their part. Every extra question, and every path that is not in the spec, makes the setup slower and more fragile. You change code and config; you never apply or deploy them (see "Change code, do not deploy").
 
 ## Prerequisites
 
@@ -25,15 +25,16 @@ With a login, `get-setup-spec` fills in the values of the instance (instance ID,
    - **Follow `related`.** A spec that names a better spec for this environment sends you there.
    - **Keep what is there.** If an agent runs already (for example, the Datadog Agent), use the method that sends its data to Oodle as well. Do not replace it unless the user asks.
    - **Cover every component.** Each item of the inventory (a database, a frontend, a queue, an LLM call) gets a spec, or a line in the summary that no spec covers it. Say that only after you compared it with the `detect` entries of every spec, not from the description alone.
-3. **Pick the method.** Run `oodle integrations get-setup-spec <type> --summary -o json`. Use the method with `recommended: true`, unless the `whenToUse` of another method matches the environment better. Do not make a method that is not in the spec.
-4. **Present one plan, and ask one round of questions.** Show a table: signal, spec, method, and the file or resource that changes. Fill in every default from the spec. Then ask, in one message, only what the user must decide (see "Questions"). Example: "I will add FireLens with the Oodle-hosted Fluent Bit config to the `api` and `worker` task definitions in `infra/ecs.tf`, with the API key as an environment variable. You apply Terraform with a pipeline, so I will open a PR. Change anything?"
+3. **Pick the method.** Run `oodle integrations get-setup-spec <type> --summary -o json`. If the spec has a `decisionTree`, read its rules in order and use the method of the first rule whose `if` is true for this environment. A rule with `also: true` adds its method, and you continue to the next rule. The last rule has no `if`: it is the default. Check each `if` against the inventory; ask the user only when the repo cannot show it. A spec with one method has no tree. Do not make a method that is not in the spec. In the plan, give the rule that picked the method.
+4. **Present one plan, and ask one round of questions.** Show a table: signal, spec, method, and the file or resource that changes. Fill in every default from the spec. Then ask, in one message, only what the user must decide (see "Questions"). Example: "I will add FireLens with the Oodle-hosted Fluent Bit config to the `api` and `worker` task definitions in `infra/ecs.tf`, with the API key as an environment variable. I will only change the files. You apply them with your pipeline, and then I check that the logs arrive. Change anything?"
 5. **Get the steps.** Run `oodle integrations get-setup-spec <type> --method <method> -o json`. Fetch it in each session, because specs change. Then fill the placeholders that are left:
    - `{{apiKey}}`: the `token` of a key in `oodle api-keys list -o json`. The CLI does not fill it, because it is a secret. Put it where the step says, which is usually an environment variable. Never print it in full.
    - Every other `{{name}}`: a value of the user's system. Its source is in `requirements.templateVariables`. Find it in the inventory, or ask in step 4.
    - Placeholders in other syntaxes (`${{ secrets.X }}`, `{{.Comm}}`, `${VAR}`) belong to the user's tools. Keep them.
-6. **Make the change in the deploy path.** Edit the files that deploy the system. Read `references/infrastructure-as-code.md` before you change Terraform, CloudFormation, CDK, Pulumi, Helm or Kustomize, and `references/gotchas.md` before you run anything. Confirm each command that changes something before you run it.
-7. **Verify each signal.** Run the `validation.checks` of the method, then `references/post-install-validation.md`. A signal is done only when its data is in Oodle.
-8. **Summarize.** For each signal: the status, what changed (files, PR, resources), what is not done and why, and how to check later (`oodle integrations list`).
+6. **Change the code, not the system.** Edit the files that define the system: app code, IaC, Helm values, task definitions, config files. Read `references/infrastructure-as-code.md` before you change Terraform, CloudFormation, CDK, Pulumi, Helm or Kustomize, and `references/gotchas.md` before you run anything. Run only the local checks that need no apply (`terraform validate`, `helm template`, `cdk synth`, a build, a test).
+7. **Hand over the deploy.** Show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install`, a merge that starts the pipeline, a restart of the app). The spec steps that deploy something go in this list: do not run them. Tell the user to deploy and to tell you when it is done.
+8. **Verify each signal** after the user says that the deploy is done. Run the `validation.checks` of the method, then `references/post-install-validation.md`. A signal is done only when its data is in Oodle.
+9. **Summarize.** For each signal: the status, what changed (files), what the user must still deploy, what is not done and why, and how to check later (`oodle integrations list`).
 
 ## Questions
 
@@ -55,14 +56,23 @@ Ask all questions in one message. If you must ask again later, say why the first
 - If the spec cannot do what the customer needs, tell the customer. Then suggest the nearest method in the spec. Do not invent a new method.
 - If a spec step says the work happens in the Oodle UI or in a vendor console, tell the customer the exact place and what to enter. Then continue with the steps you can do.
 
+### Change code, do not deploy
+
+The customer owns their deploys: their pipeline, their approvals, their maintenance windows, their rollback. A deploy from the agent goes around all of them, and it is the step that can break production.
+
+- Change files only. Do not run a command that changes a running system or a cloud account: `terraform apply`, `pulumi up`, `cdk deploy`, `aws cloudformation deploy`, `helm install` / `upgrade`, `kubectl apply` / `patch` / `rollout restart`, `aws` / `gcloud` / `az` commands that create, update or delete, `docker push`, `docker compose up` on a server, a service restart.
+- This is also true when a spec step gives such a command, and when the customer has no IaC. Give the command to the customer to run.
+- Do not commit, push or open a PR unless the customer asks. Tell them which files changed.
+- You can run read-only commands (list, get, describe, `terraform plan`, `helm template`) and local checks (build, test, lint, `validate`).
+- Changes in the Oodle account with the `oodle` CLI (an API key, `import-assets`, `s3-logs add`) are not a deploy of the customer's system. Show each one and run it after the customer agrees.
+
 ### Change the system of record
 
-- If infrastructure as code manages a resource, change the code. Do not change the resource directly with a cloud CLI. A direct change makes drift, and the next `terraform apply` removes it.
-- Use a cloud CLI only for resources that no code manages, and only after the customer agrees.
+If infrastructure as code manages a resource, change the code. Do not give a cloud CLI command for it: a direct change makes drift, and the next `terraform apply` removes it. Give a cloud CLI command only for a resource that no code manages, and say that it is not in code.
 
 ### Confirm before changing anything
 
-Show each command or file change that creates, modifies or deletes something, and wait for confirmation. Read-only commands (list, get, describe, plan) do not need confirmation.
+Show each file change and each `oodle` command that changes the Oodle account, and wait for confirmation. Read-only commands do not need confirmation.
 
 ### Keep existing state
 
@@ -76,7 +86,7 @@ If a resource already exists (a namespace, a Helm release, a sidecar, a collecto
 
 ### One step at a time
 
-Do the steps in sequence. Make sure that each step is successful before you start the next one. If a step fails, find the cause and suggest a fix. Do not continue past a failed step.
+Do the steps in sequence. Make sure that each step is successful before you start the next one. If a step fails, find the cause and suggest a fix. Do not continue past a failed step. When the customer reports that a deploy failed, read the error and fix the files; the customer deploys again.
 
 ## Quick Reference
 

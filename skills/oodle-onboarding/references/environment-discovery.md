@@ -79,7 +79,7 @@ Before each step, check what is there:
 |---|---|
 | Make a namespace | `kubectl get namespace <name>`. Skip it if it exists. |
 | Add a Helm repo | `helm repo list`. Use `--force-update` to refresh it. |
-| Install a chart | `helm list -n <namespace>`. If the release exists, use `helm upgrade`. |
+| Install a chart | `helm list -n <namespace>`. If the release exists, the command you give the user is `helm upgrade`, not `helm install`. |
 | Make a Secret or ConfigMap | `kubectl get secret/configmap <name> -n <ns>`. Update it or skip it. |
 | Add a sidecar or log router | Look for one in the task definition or pod spec. Update it. Do not add a second one. |
 | Change a collector config | Read the current config. Add an exporter and a pipeline entry. Keep the current ones. |
