@@ -2,7 +2,7 @@
 
 A signal is set up only when its data is in Oodle. Run the spec's `validation.checks` first: they name the metrics, log filters and queries for that integration. Then use the checks below for each signal that the integration gives.
 
-Some integrations show a status in `oodle integrations list -o json` (`RECEIVING`). Many do not, and logs or traces can arrive with no integration record at all. Thus, a query that returns data is the check. A status is not.
+Some integrations show a status in `oodle integrations list -o json` (`RECEIVING`). Many do not, and logs or traces can arrive with no integration record at all. Thus, a query that returns data is the check. A status is not. The metrics status also trails the data: it can show `NOT_RECEIVING` for a minute or two after the first data arrives. When a query returns data, report the signal as done and say that the status can take a few minutes to change.
 
 ## Checks by signal
 
