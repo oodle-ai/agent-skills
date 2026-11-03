@@ -18,21 +18,21 @@ Run these checks and match results against available setup specs from `list-setu
 | Prometheus | `prometheus --version`, processes matching `prometheus`, prometheus config files | `otel` or `kubernetes` |
 | Existing Oodle components | `kubectl get pods -n oodle-system`, `helm list -n oodle-system` | Already partially integrated — check what's missing |
 
-Present the findings to the user: "I detected X, Y, Z in the environment. Based on available setup specs, I recommend the **foo** integration. Shall I proceed?"
+Present the findings to the user: "I detected X, Y, Z in the environment. Based on available setup specs, I recommend the **foo** integration." Put this in the question round of step 5, with the other open questions.
 
 ## Adapting Setup Steps
 
-The setup spec is a blueprint — it defines **what** needs to happen, not necessarily the exact commands for the specific environment. Before executing each step, probe for existing state:
+The setup spec is a blueprint — it defines **what** needs to happen, not necessarily the exact commands for the specific environment. Before you change the code for a step, read the existing state (read-only), so that the change and the deploy command you hand over fit it:
 
-| Before this step... | Check for... |
-|---------------------|-------------|
-| Create namespace | `kubectl get namespace <name>` — skip if exists |
-| Add helm repo | `helm repo list` — skip if already added, use `--force-update` to refresh |
-| Install helm chart | `helm list -n <namespace>` — if release exists, use `helm upgrade` instead |
-| Create secrets/ConfigMaps | `kubectl get secret/configmap <name> -n <ns>` — skip or update if exists |
-| Apply manifests | Check if resources already exist, diff against desired state |
-| Set up cloud credentials | Check if credentials already exist in expected locations |
-| Configure collector endpoints | Inspect existing collector config files for current endpoint settings |
+| For this step... | Read... | So that... |
+|---------------------|-------------|-------------|
+| A namespace | `kubectl get namespace <name>` | the deploy command has `--create-namespace` only when it is missing |
+| A Helm repo | `helm repo list` | the user's commands add it only when it is missing |
+| A Helm chart | `helm list -n <namespace>`, `helm get values <release> -n <namespace>` | an existing release gets `helm upgrade` with its current values kept |
+| Secrets/ConfigMaps | `kubectl get secret/configmap <name> -n <ns>` | you reuse an existing Secret instead of asking for a new one |
+| Manifests | the files in the repo and the live resources | the change edits the existing resource, not a second copy |
+| Cloud credentials | the expected locations | you ask only for what is missing |
+| Collector endpoints | the existing collector config files | you add the Oodle exporter to the running collector |
 
 ## Parameter Resolution
 
