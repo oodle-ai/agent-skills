@@ -197,6 +197,11 @@ Do not write the API key into a file that git tracks. Use the customer's existin
 
 If a resource already exists (a Helm release, a log router, a collector), change it instead of adding a second one, and keep the user's settings. Do not delete and recreate.
 
+### Handle API keys without exposing them
+
+- `oodle api-keys list -o json` prints the full token of every key. List keys without the tokens: `oodle api-keys list -o json | jq '[.[] | {id, name, roles, isPrimary}]'`.
+- When you create a key, write the token straight to the place it is used (an ignored `.env`, the user's secret store), with `umask 077` set first. Do not put it in `/tmp` or another shared folder, even for a moment, and do not print it.
+
 ### Redact secrets in output
 
 Never display full API keys, tokens, or passwords. Show only the first and last 4 characters (e.g., `oodl...k9x2`). When rendering config templates from the spec, redact secret values before showing to the user.
