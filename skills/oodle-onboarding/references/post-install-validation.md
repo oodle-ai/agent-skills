@@ -8,7 +8,7 @@ Verify that the data is queryable on the Oodle side. A query that returns data i
 |--------|-------------|-----------------|
 | Metrics | `/oodle-metrics-query` | `oodle metrics query --query 'up{cluster="<clusterName>"}' --time now -o json` |
 | Metrics (APM/Beyla) | `/oodle-metrics-query` | `oodle metrics query --query 'http_server_request_duration_seconds_count{k8s_namespace_name="<namespace>"}' --time now -o json` |
-| Logs | `/oodle-logs` | `oodle logs query -f <ndjson-file> -o json` (query by cluster or namespace) |
+| Logs | `/oodle-logs` | `oodle logs query -f <ndjson-file> -o json` (query by cluster or namespace). Take the index from `oodle logs index-patterns -o json` first: it is named after the instance (for example `inst_..._logs`). The `logs-*` in the CLI help is only an example, and it returns nothing. |
 | Traces | `/oodle-traces` | `oodle traces list --start -15m --end now --limit 5 -o json` |
 | Service Graph | `/oodle-metrics-query` | `oodle metrics query --query 'traces_service_graph_request_total{client="<service>"}' --time now -o json` |
 
