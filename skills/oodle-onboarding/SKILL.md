@@ -18,6 +18,8 @@ Before starting any onboarding work, verify the Oodle CLI is installed and authe
 oodle version
 ```
 
+`get-setup-spec` fills the instance's values from CLI 0.20.0 on. If the version is older, update the CLI with the install command below (it updates an older CLI), or with `brew upgrade oodle` when Homebrew installed it.
+
 If the command is not found, install it:
 
 ```bash
@@ -58,11 +60,11 @@ Follow this sequence for every integration onboarding request. You change the cu
 
 1. **Identify the integration type.** If the user named one (e.g., "kubernetes", "aws-cloudwatch"), use it. Otherwise, run environment discovery to detect present infrastructure and recommend matching integrations (see `references/environment-discovery.md`).
 2. **Fetch available setup specs** — run `oodle integrations list-setup-specs -o json` (no auth required) to confirm the type exists and cross-reference against discovery results.
-3. **Fetch the setup spec** — run `oodle integrations get-setup-spec <type-lowercase> -o json`. When the CLI is logged in, it fills the Oodle values of the instance (instance ID, collector domains); the `filledValues` field names them. Only `{{apiKey}}` and the values of the customer's own system stay placeholders. For the API key, run `oodle api-keys list -o json`, or `oodle api-keys create --name <name> --scopes <scopes>` when none fits. The spec is the **blueprint**, not a rigid script.
+3. **Fetch the setup spec** — run `oodle integrations get-setup-spec <type-lowercase> -o json`. When the CLI (0.20.0 or later) is logged in, it fills the Oodle values of the instance (instance ID, collector domains); the `filledValues` field names them. If the output has no `filledValues`, take the values from `oodle auth status -o json` and `oodle integrations list -o json`. Only `{{apiKey}}` and the values of the customer's own system stay placeholders. For the API key, run `oodle api-keys list -o json`, or `oodle api-keys create --name <name> --scopes <scopes>` when none fits. The spec is the **blueprint**, not a rigid script.
 4. **Discover the environment in depth** — probe the codebase, running services, existing configs, and how changes reach production (IaC, pipeline, Helm release). See `references/environment-discovery.md` and `references/infrastructure-as-code.md`.
 5. **Ask every open question before you change anything.** List each decision that the repo does not settle and each value you could not find. Ask them all in one message, with your recommended answer for each. If an answer opens new questions, ask those in the next round. Stop when nothing is open. Then show the plan (what changes, in which files) and wait for the user to agree. See "Questions" below.
 6. **Change the code, not the system** — edit the files that define the system: app code, IaC, Helm values, task definitions, compose files. Follow the spec's steps and adapt them to what discovery found. Run only checks that change nothing (`terraform validate`, `helm template`, `cdk synth`, a build, a test). Review `references/gotchas.md` first.
-7. **Hand over the deploy** — show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install ...`, a merge that starts the pipeline). Tell the user to deploy and to tell you when it is done.
+7. **Hand over the deploy** — show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install ...`, a merge that starts the pipeline). When a pipeline applies the change, offer to commit it on a new branch and open a PR, because the merge is the deploy; do it when the user agrees. Tell the user to deploy and to tell you when it is done.
 8. **Verify each signal** after the user says the deploy is done: run a query that returns the new data (see `references/post-install-validation.md`). A signal is done only when its data is in Oodle.
 
 For failure scenarios, consult `references/failure-handling.md`.
@@ -83,7 +85,7 @@ The customer owns their deploys: their pipeline, approvals and rollback. A deplo
 
 - Do not run a command that changes a running system or a cloud account: `terraform apply`, `pulumi up`, `cdk deploy`, `helm install` / `upgrade`, `kubectl apply`, cloud CLI commands that create, update or delete, a service restart. This is also true when a spec step gives such a command: give it to the user.
 - If infrastructure as code manages a resource, change the code. A cloud CLI change next to IaC is drift, and the next apply removes it.
-- Do not commit, push or open a PR unless the user asks.
+- Commit, push or open a PR only after the user agrees. When a pipeline applies the change, offer the PR yourself (see step 7); otherwise leave the changes uncommitted for the user to review.
 - Read-only commands are fine. A change in the Oodle account (creating an API key, importing dashboards) needs the user's agreement first.
 - Never create, change or delete anything to find out how a command behaves, not even to delete it again. Read `--help` (for example `oodle api-keys create --help` for the roles and scopes) or the spec instead.
 - For a new API key, propose the least role that the spec names (an ingest key for an app or a collector, a RUM key for browser code) and create it only after the user agrees.
@@ -187,7 +189,7 @@ Collect all required parameters before starting execution. Check these sources i
 
 ### Keep secrets out of files and commands
 
-Do not write the API key into a file that git tracks. Use the customer's existing way to pass secrets (a Kubernetes Secret, `TF_VAR_*`, a CI variable, a `.env` file that git ignores). In a command you give the user, use an environment variable for the key, not the value.
+Do not write the API key into a file that git tracks. Use the customer's existing way to pass secrets (a Kubernetes Secret, `TF_VAR_*`, a CI variable, a `.env` file that git ignores). In a command you give the user, use an environment variable for the key, not the value. This rule wins over a spec step that shows the key in place: the specs' Terraform blocks already read it from `var.oodle_api_key`, and a spec's JSON with the key in plain text is only for a file that is not committed (for example the `taskdef.json` that the AWS CLI registers). In a task definition or manifest that git tracks, use the platform's secret reference (ECS `secrets` with `valueFrom`, a Kubernetes `secretKeyRef`).
 
 ### Handle existing resources gracefully
 

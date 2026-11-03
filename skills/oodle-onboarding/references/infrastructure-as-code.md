@@ -16,7 +16,7 @@ Ask: "I will change `<files>`. Do you apply these through `<pipeline>`, or local
 
 1. Make the change in the code.
 2. Run the checks that need no credentials: `terraform fmt`, `terraform validate`, `helm template`, `cdk synth`.
-3. Give the diff. Say what the change does and how to roll it back. Commit, push or open a PR only if the customer asks.
+3. Give the diff. Say what the change does and how to roll it back. Offer to commit it on a new branch and open a PR, since the merge is the deploy, and do it when the customer agrees. Follow the repo's branch and commit conventions.
 4. Stop and tell the customer what to do next ("merge the change, and tell me when the deploy is done"). Validate the signal after they confirm.
 
 ## When a person applies
@@ -29,7 +29,8 @@ Ask: "I will change `<files>`. Do you apply these through `<pipeline>`, or local
 ## Where the Oodle settings go
 
 - **Terraform**: put the Oodle values in variables (`oodle_api_key` with `sensitive = true`, `oodle_logs_host`). Set the key from the customer's existing method for secret values (`TF_VAR_oodle_api_key`, a `*.tfvars` file that git ignores, or a CI variable). Do not write the key into a `.tf` file.
-- **ECS task definitions in Terraform**: they are usually `container_definitions = jsonencode([...])` or a templated JSON file. Edit the container list there. A new task definition revision is made at apply, and the service rolls to it.
+- **ECS task definitions in Terraform**: they are usually `container_definitions = jsonencode([...])` or a templated JSON file. Edit the container list there. A new task definition revision is made at apply, and the service rolls to it. The ECS spec's Terraform blocks declare `oodle_api_key` and use it; keep that, and do not paste the key from the JSON form.
+- **ECS task definition JSON that git tracks**: put the key in the `secrets` field (`valueFrom` a Secrets Manager or SSM parameter ARN) and let the task execution role read it. A plain `OODLE_API_KEY` value is only for a `taskdef.json` that is registered with the AWS CLI and not committed.
 - **Helm**: put the values in the values file that the customer's release uses. Put the key in an existing Secret, or in the Secret that the spec says.
 - **CloudFormation / CDK / Pulumi**: make the same change in the template or the code, with a parameter or a config value for the key.
 
