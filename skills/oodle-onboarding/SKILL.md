@@ -1,6 +1,6 @@
 ---
 name: oodle-onboarding
-description: This skill should be used when the user asks to "set up oodle integration", "onboard to oodle", "integrate kubernetes with oodle", "connect AWS to oodle", "install oodle collector", or mentions setting up observability with Oodle. Discovers the environment, recommends matching integrations from available setup specs, and executes step-by-step installation. Not for querying existing metrics, logs, or traces (use /oodle-metrics-query, /oodle-logs, /oodle-traces instead).
+description: This skill should be used when the user asks to "set up oodle integration", "onboard to oodle", "integrate kubernetes with oodle", "connect AWS to oodle", "install oodle collector", or mentions setting up observability with Oodle. Discovers the environment, recommends matching integrations from available setup specs, asks every open question first, changes the customer's code and config for the setup, hands the deploy to the user, and verifies the data. Not for querying existing metrics, logs, or traces (use /oodle-metrics-query, /oodle-logs, /oodle-traces instead).
 version: 1.0.0
 ---
 
@@ -23,8 +23,10 @@ oodle version
 If the command is not found, install it:
 
 ```bash
-curl -fsSL https://www.oodle.ai/skills.sh | bash -s -- --no-onboarding
+curl -fsSL https://www.oodle.ai/skills.sh | bash -s -- --no-login --no-onboarding
 ```
+
+`--no-login` skips the browser login, which cannot run from your shell; the user logs in with Step 2.
 
 Or with Homebrew:
 
@@ -65,7 +67,7 @@ Follow this sequence for every integration onboarding request. You change the cu
 5. **Ask every open question before you change anything.** List each decision that the repo does not settle and each value you could not find. Ask them all in one message, with your recommended answer for each. If an answer opens new questions, ask those in the next round. Stop when nothing is open. Then show the plan (what changes, in which files) and wait for the user to agree. See "Questions" below.
 6. **Change the code, not the system** — edit the files that define the system: app code, IaC, Helm values, task definitions, compose files. Follow the spec's steps and adapt them to what discovery found. Run only checks that change nothing (`terraform validate`, `helm template`, `cdk synth`, a build, a test). Review `references/gotchas.md` first.
 7. **Hand over the deploy** — show the changed files and the exact commands that apply them (`terraform apply`, `helm upgrade --install ...`, a merge that starts the pipeline). When a pipeline applies the change, offer to commit it on a new branch and open a PR, because the merge is the deploy; do it when the user agrees. Tell the user to deploy and to tell you when it is done.
-8. **Verify each signal** after the user says the deploy is done: run a query that returns the new data (see `references/post-install-validation.md`). A signal is done only when its data is in Oodle.
+8. **Verify each signal** after the user says the deploy is done. First check that what you changed runs, with read-only commands: the pods (`kubectl get pods -n <namespace>`), the ECS service and its tasks (`aws ecs describe-services`), or `docker compose ps`. Then run a query that returns the new data (see `references/post-install-validation.md`). A signal is done only when its data is in Oodle.
 
 For failure scenarios, consult `references/failure-handling.md`.
 
@@ -87,8 +89,8 @@ The customer owns their deploys: their pipeline, approvals and rollback. A deplo
 - If infrastructure as code manages a resource, change the code. A cloud CLI change next to IaC is drift, and the next apply removes it.
 - Commit, push or open a PR only after the user agrees. When a pipeline applies the change, offer the PR yourself (see step 7); otherwise leave the changes uncommitted for the user to review.
 - Read-only commands are fine. A change in the Oodle account (creating an API key, importing dashboards) needs the user's agreement first.
-- Never create, change or delete anything to find out how a command behaves, not even to delete it again. Read `--help` (for example `oodle api-keys create --help` for the roles and scopes) or the spec instead.
-- For a new API key, propose the least role that the spec names (an ingest key for an app or a collector, a RUM key for browser code) and create it only after the user agrees.
+- Never create, change or delete anything to find out how a command behaves, not even to delete it again. Read `--help` or the spec instead.
+- For a new API key, propose the least role that the spec names, and create it only after the user agrees. The spec's `apiKey` variable gives the command. The roles are `DataIngestion` (an app or a collector sends data), `RUM` (browser code), `Viewer` (queries), `Editor` and `Admin`; pass no scopes: `oodle api-keys create --name <name> --scopes "" --roles DataIngestion -o json`.
 - One exception: when the user asks, you can start a local, throwaway target yourself (`docker compose up` on their machine, or a local kind or minikube cluster after `kubectl config current-context` names it).
 
 ## Quick Reference
@@ -151,8 +153,8 @@ helm list -A | grep oodle
 helm get values oodle-observability -n oodle-monitoring   # keep the user's values when you write the new file
 
 # CORRECT — change the values file in the repo, check it, and give the user the command
-helm template oodle-observability oodle/oodle-k8s-observability --values deploy/oodle-values.yaml > /dev/null
-echo "Run: helm upgrade --install oodle-observability oodle/oodle-k8s-observability -n oodle-monitoring --values deploy/oodle-values.yaml"
+helm template oodle-observability oodle/oodle-k8s-observability --version <chart version from the spec> --values deploy/oodle-values.yaml > /dev/null
+echo "Run: helm upgrade --install oodle-observability oodle/oodle-k8s-observability --version <chart version from the spec> -n oodle-monitoring --create-namespace --values deploy/oodle-values.yaml"
 
 # WRONG — applying the change yourself
 helm upgrade --install oodle-observability ...
