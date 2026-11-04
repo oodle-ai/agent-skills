@@ -2,7 +2,7 @@
 
 | Situation | Action |
 |-----------|--------|
-| `oodle` CLI not installed | Install with `curl -fsSL https://www.oodle.ai/skills.sh \| bash -s -- --no-login --no-onboarding`, or `brew install oodle-ai/oodle/oodle`. If neither works, use `go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest`. |
+| `oodle` CLI not installed | Install with `curl -fsSL https://www.oodle.ai/install.sh \| bash -s -- --no-login --no-onboarding`, or `brew install oodle-ai/oodle/oodle`. If neither works, use `go install github.com/oodle-ai/oodle-cli/cmd/oodle@latest`. |
 | CLI not authenticated | Run `oodle auth login` — this opens a browser for OAuth. Prompt the user to complete the browser flow. Verify with `oodle auth status`. For `get-setup-spec` and `list-setup-specs`, proceed without auth. |
 | Integration type not found (404) | Lowercase the type (e.g., `KUBERNETES` → `kubernetes`). If still failing, run `oodle integrations list-setup-specs` to show available types (no auth needed). |
 | Requirement not met (e.g., no kubectl) | Tell user what's missing, provide install instructions, wait for confirmation |
