@@ -23,7 +23,7 @@ oodle version
 If the command is not found, install it:
 
 ```bash
-curl -fsSL https://www.oodle.ai/skills.sh | bash -s -- --no-login --no-onboarding
+curl -fsSL https://www.oodle.ai/install.sh | bash -s -- --no-login --no-onboarding
 ```
 
 `--no-login` skips the browser login, which cannot run from your shell; the user logs in with Step 2.
