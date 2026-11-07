@@ -2,7 +2,7 @@
 name: oodle-logs
 description: Search, query, and aggregate log data using OpenSearch Query DSL, and discover available log index patterns.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   author: oodle-ai
   repository: https://github.com/oodle-ai/agent-skills
   tags: oodle,logs,search,opensearch,index-patterns
@@ -33,8 +33,52 @@ Before running any log query:
 1. Run `oodle logs index-patterns -o json` to discover available log index patterns.
 2. Pick the appropriate index pattern `title` for your query.
 3. Build the NDJSON query file using the discovered index pattern and OpenSearch Query DSL.
-4. Set `--start` and `--end` to cover the time range you need. They default to `-1h` and `now`. 
+4. Set `--start` and `--end` to cover the time range you need, 3 days or less (see "Query Cost"). They default to `-1h` and `now`.
 5. Do not guess index names — always confirm with `index-patterns` first.
+
+## Query Cost
+
+A log query has a server time limit of 60 seconds. A slow query also slows log queries for other users, and a query that times out returns nothing. Write every query so that it reads as few log lines as possible:
+
+1. **Search text in `message`.** `message` has a token index, so a `match_phrase` on `message` reads only the parts of the logs that hold the words.
+2. **Queries on `raw_log` are slow.** `raw_log` has no index, so a search on it reads every log line in the time range. Search `message` first. Search `raw_log` only when `message` does not hold the text. Then:
+   - use a window of a few hours, not days;
+   - put the `raw_log` search in its own query. In a `bool` `should` clause next to a `message` search, the `raw_log` search makes the `message` search read every line too, so the whole query is as slow as a `raw_log` search.
+3. **Use `.keyword` for exact values**, such as an ID or a service name: `{"term": {"service.keyword": "checkout"}}`. Without `.keyword`, the match is a substring search.
+4. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
+5. **Run log queries one at a time.** Do not run log queries in parallel.
+6. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
+7. **When a query times out, make it narrower.** Do not run it again unchanged. Use a shorter window, `message` instead of `raw_log`, and `.keyword` for exact values. The CLI prints this hint on stderr when a query times out.
+
+```bash
+# CORRECT — phrase search on the indexed message field, over one day
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"bool": {"filter": [{"match_phrase": {"message": "still behind after the maximum wait"}}, {"term": {"environment.keyword": "production"}}]}}, "size": 100}
+EOF
+oodle logs query -f query.ndjson --start -24h --end now -o json
+
+# CORRECT — message has no match: search raw_log alone, over a few hours
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"match_phrase": {"raw_log": "still behind after the maximum wait"}}, "size": 100}
+EOF
+oodle logs query -f query.ndjson --start -4h --end now -o json
+
+# WRONG — message OR raw_log over 7 days: the query reads every line in 7 days and times out
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"bool": {"minimum_should_match": 1, "should": [{"match_phrase": {"message": "still behind after the maximum wait"}}, {"match_phrase": {"raw_log": "still behind after the maximum wait"}}]}}, "size": 500}
+EOF
+oodle logs query -f query.ndjson --start -7d --end now -o json
+# FIX: search message alone, in windows of 3 days or less. If message has no match, search raw_log in a separate query over a few hours.
+
+# WRONG — log queries in parallel
+oodle logs query -f week1.ndjson --start -7d --end -6d -o json &
+oodle logs query -f week2.ndjson --start -14d --end -13d -o json &
+wait
+# FIX: run the queries one after the other, and stop when you have the answer.
+```
 
 ## Quick Reference
 
@@ -253,6 +297,7 @@ oodle logs index-patterns -o json | jq '.[0].fields[].name'
 | 0 results for older data | `--start` defaults to `-1h`; data outside that window is excluded | Pass explicit `--start` for older data, e.g. `--start -24h` or `--start <epoch_ms>` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var, ensure no trailing slash |
 | 429 Too Many Requests | Rate limited | Add `--retries 3`, back off, reduce query frequency |
+| `Timeout exceeded` or `TIMEOUT_EXCEEDED` in `responses[].error` | The query read too many log lines in 60 seconds | Do not run it again unchanged. Use a shorter window, search `message` instead of `raw_log`, use `.keyword` for exact values, and run queries one at a time (see "Query Cost") |
 | 400 on `regexp`, `script`, or runtime field | Not supported | Use `match_phrase`, or a log metrics rule (see "Values inside plain-text log lines") |
 | `required flag(s) "file" not set` | Missing required flag for log query | Add `-f` flag with path to NDJSON file |
 
