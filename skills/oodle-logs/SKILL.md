@@ -38,17 +38,21 @@ Before running any log query:
 
 ## Query Cost
 
-A log query has a server time limit of 60 seconds. A slow query also slows log queries for other users, and a query that times out returns nothing. Write every query so that it reads as few log lines as possible:
+A log query has a server time limit. A slow query also slows log queries for other users, and a query that times out returns nothing. Write every query so that it reads as few log lines as possible:
 
-1. **Search text in `message`.** `message` has a token index, so a `match_phrase` on `message` reads only the parts of the logs that hold the words.
-2. **Queries on `raw_log` are slow.** `raw_log` has no index, so a search on it reads every log line in the time range. Search `message` first. Search `raw_log` only when `message` does not hold the text. Then:
+1. **Search text in `message`.** `message` is indexed for word search, so a `match_phrase` on `message` reads only the parts of the logs that hold the words.
+2. **Queries on `raw_log` are slow.** `raw_log` is not indexed, so a search on it reads every log line in the time range. Search `message` first. Search `raw_log` only when `message` does not hold the text. Then:
    - use a window of a few hours, not days;
    - put the `raw_log` search in its own query. In a `bool` `should` clause next to a `message` search, the `raw_log` search makes the `message` search read every line too, so the whole query is as slow as a `raw_log` search.
-3. **Use `.keyword` for exact values**, such as an ID or a service name: `{"term": {"service.keyword": "checkout"}}`. Without `.keyword`, the match is a substring search.
-4. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
-5. **Run log queries one at a time.** Do not run log queries in parallel.
-6. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
-7. **When a query times out, make it narrower.** Do not run it again unchanged. Use a shorter window, `message` instead of `raw_log`, and `.keyword` for exact values. The CLI prints this hint on stderr when a query times out.
+3. **Query JSON fields by subfield.** A JSON field holds nested values, for example a field `log` with the subfields `log.level` and `log.session_id`. Check the field names with `oodle logs index-patterns`.
+   - Do not filter on the JSON field itself (`log`). That reads the whole field of every line. Query a subfield (`log.level`).
+   - On a subfield, a `match_phrase` or `query_string` term without `.keyword` is a contains search. It reads the whole JSON field of every line and can time out over a few hours. For an exact value, such as an ID, use the `.keyword` form: `{"term": {"log.session_id.keyword": "<id>"}}`.
+   - To find text inside log lines, such as an ID in the log message, search `message`, not a subfield such as `log.message`. Do not add a `log.message` term for the same text.
+4. **Use `.keyword` for exact values**, such as an ID or a service name: `{"term": {"service.keyword": "checkout"}}`. Without `.keyword`, the match is a substring search.
+5. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
+6. **Run log queries one at a time.** Do not run log queries in parallel.
+7. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
+8. **When a query times out, make it narrower.** Do not run it again unchanged. Use a shorter window, `message` instead of `raw_log`, a JSON subfield instead of the whole JSON field, and `.keyword` for exact values. The CLI prints this hint on stderr when a query times out.
 
 ```bash
 # CORRECT — phrase search on the indexed message field, over one day
@@ -72,6 +76,24 @@ cat > query.ndjson <<'EOF'
 EOF
 oodle logs query -f query.ndjson --start -7d --end now -o json
 # FIX: search message alone, in windows of 3 days or less. If message has no match, search raw_log in a separate query over a few hours.
+
+# CORRECT — exact ID in a JSON subfield: the .keyword form reads only that subfield
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"term": {"log.session_id.keyword": "0b7e5c2a-1f3d-4a8e-9c6b-2d4f8a1e7b90"}}, "size": 100}
+EOF
+oodle logs query -f query.ndjson --start -24h --end now -o json
+
+# WRONG — the same ID as a contains search on the subfield: reads the whole JSON field of every line
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"match_phrase": {"log.session_id": "0b7e5c2a-1f3d-4a8e-9c6b-2d4f8a1e7b90"}}, "size": 100}
+EOF
+# FIX: use {"term": {"log.session_id.keyword": "<id>"}}. To find the ID anywhere in the log text, search message instead.
+
+# WRONG — filtering on the whole JSON field
+{"query": {"match_phrase": {"log": "timeout"}}}
+# FIX: query a subfield such as log.error, or search message for text.
 
 # WRONG — log queries in parallel
 oodle logs query -f week1.ndjson --start -7d --end -6d -o json &
@@ -297,7 +319,7 @@ oodle logs index-patterns -o json | jq '.[0].fields[].name'
 | 0 results for older data | `--start` defaults to `-1h`; data outside that window is excluded | Pass explicit `--start` for older data, e.g. `--start -24h` or `--start <epoch_ms>` |
 | connection refused | Wrong `OODLE_DEPLOYMENT` URL | Check `OODLE_DEPLOYMENT` env var, ensure no trailing slash |
 | 429 Too Many Requests | Rate limited | Add `--retries 3`, back off, reduce query frequency |
-| `Timeout exceeded` or `TIMEOUT_EXCEEDED` in `responses[].error` | The query read too many log lines in 60 seconds | Do not run it again unchanged. Use a shorter window, search `message` instead of `raw_log`, use `.keyword` for exact values, and run queries one at a time (see "Query Cost") |
+| `Timeout exceeded` or `TIMEOUT_EXCEEDED` in `responses[].error` | The query read too many log lines before the server time limit | Do not run it again unchanged. Use a shorter window, search `message` instead of `raw_log`, query a JSON subfield instead of the whole JSON field, use `.keyword` for exact values, and run queries one at a time (see "Query Cost") |
 | 400 on `regexp`, `script`, or runtime field | Not supported | Use `match_phrase`, or a log metrics rule (see "Values inside plain-text log lines") |
 | `required flag(s) "file" not set` | Missing required flag for log query | Add `-f` flag with path to NDJSON file |
 
