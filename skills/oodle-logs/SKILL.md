@@ -53,6 +53,7 @@ A log query has a server time limit. A slow query also slows log queries for oth
 5. **Put wildcards in a `query_string` clause.** `?` matches one character and `*` matches zero or more characters.
    - Write them outside quotes. Inside quotes, and in a `term` clause, `*` is a literal character. `wildcard`, `prefix` and `regexp` clauses are not supported.
    - On a `.keyword` field, the pattern must match the whole value, and case matters: `log.logger.keyword:uvicorn*` finds `uvicorn.error`, and `log.file.keyword:*server.py` finds `/app/server.py`. This is the fast way to match part of a JSON subfield value.
+   - Use a `.keyword` wildcard also for "starts with" or "ends with" on any field: `container_name.keyword:compactor*` finds `compactor-wal` but not `log-compactor-x`. Without `.keyword`, `container_name:compactor*` is a contains search and finds both.
 6. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
 7. **Run log queries one at a time.** Do not run log queries in parallel.
 8. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
