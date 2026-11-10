@@ -40,19 +40,24 @@ Before running any log query:
 
 A log query has a server time limit. A slow query also slows log queries for other users, and a query that times out returns nothing. Write every query so that it reads as few log lines as possible:
 
-1. **Search text in `message`.** `message` is indexed for word search, so a `match_phrase` on `message` reads only the parts of the logs that hold the words.
+1. **Search text in `message`.** `message` is indexed for word search, so a `match_phrase` on `message` reads only the parts of the logs that hold the words. The search matches whole words: `for` finds "blocked for 5s" but not "for180seconds", so no match does not prove that part of a word is absent. To match part of a word, use a wildcard (rule 5): `{"query_string": {"query": "message:*for*"}}`. A wildcard on `message` reads the whole `message` field of every line, so use a window of a few hours.
 2. **Queries on `raw_log` are slow.** `raw_log` is not indexed, so a search on it reads every log line in the time range. Search `message` first. Search `raw_log` only when `message` does not hold the text. Then:
    - use a window of a few hours, not days;
    - put the `raw_log` search in its own query. In a `bool` `should` clause next to a `message` search, the `raw_log` search makes the `message` search read every line too, so the whole query is as slow as a `raw_log` search.
 3. **Query JSON fields by subfield.** A JSON field holds nested values, for example a field `log` with the subfields `log.level` and `log.session_id`. Check the field names with `oodle logs index-patterns`.
    - Do not filter on the JSON field itself (`log`). That reads the whole field of every line. Query a subfield (`log.level`).
    - On a subfield, a `match_phrase` or `query_string` term without `.keyword` is a contains search. It reads the whole JSON field of every line and can time out over a few hours. For an exact value, such as an ID, use the `.keyword` form: `{"term": {"log.session_id.keyword": "<id>"}}`.
+   - For part of a value in a subfield, use a `.keyword` wildcard (rule 5). It reads only that subfield, not the whole JSON field.
    - To find text inside log lines, such as an ID in the log message, search `message`, not a subfield such as `log.message`. Do not add a `log.message` term for the same text.
 4. **Use `.keyword` for exact values**, such as an ID or a service name: `{"term": {"service.keyword": "checkout"}}`. Without `.keyword`, the match is a substring search.
-5. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
-6. **Run log queries one at a time.** Do not run log queries in parallel.
-7. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
-8. **When a query times out, make it narrower.** Do not run it again unchanged. Use a shorter window, `message` instead of `raw_log`, a JSON subfield instead of the whole JSON field, and `.keyword` for exact values. The CLI prints this hint on stderr when a query times out.
+5. **Put wildcards in a `query_string` clause.** `?` matches one character and `*` matches zero or more characters.
+   - Write them outside quotes. Inside quotes, and in a `term` clause, `*` is a literal character. `wildcard`, `prefix` and `regexp` clauses are not supported.
+   - On a `.keyword` field, the pattern must match the whole value, and case matters: `log.logger.keyword:uvicorn*` finds `uvicorn.error`, and `log.file.keyword:*server.py` finds `/app/server.py`. This is the fast way to match part of a JSON subfield value.
+   - Use a `.keyword` wildcard also for "starts with" or "ends with" on any field: `container_name.keyword:payment*` finds `payment-api` but not `legacy-payment`. Without `.keyword`, `container_name:payment*` is a contains search and finds both.
+6. **Use windows of 3 days or less.** Start with the shortest window that can hold the answer. For a longer period, split it into windows of 3 days or less, and stop when you have found what you need.
+7. **Run log queries one at a time.** Do not run log queries in parallel.
+8. **Count with `aggs` and `"size": 0`** when you need numbers, not log lines.
+9. **When a query times out, make it narrower.** Do not run it again unchanged. Use a shorter window, `message` instead of `raw_log`, a JSON subfield instead of the whole JSON field, `.keyword` for exact values, and a `.keyword` wildcard for part of a value. The CLI prints this hint on stderr when a query times out.
 
 ```bash
 # CORRECT — phrase search on the indexed message field, over one day
@@ -90,6 +95,22 @@ cat > query.ndjson <<'EOF'
 {"query": {"match_phrase": {"log.session_id": "0b7e5c2a-1f3d-4a8e-9c6b-2d4f8a1e7b90"}}, "size": 100}
 EOF
 # FIX: use {"term": {"log.session_id.keyword": "<id>"}}. To find the ID anywhere in the log text, search message instead.
+
+# CORRECT — part of a JSON subfield value: a .keyword wildcard in query_string reads only that subfield
+cat > query.ndjson <<'EOF'
+{"index": "logs-*"}
+{"query": {"query_string": {"query": "log.logger.keyword:uvicorn*"}}, "size": 100}
+EOF
+oodle logs query -f query.ndjson --start -24h --end now -o json
+
+# WRONG — the same search as a contains search on the subfield: reads the whole JSON field of every line
+{"query": {"match_phrase": {"log.logger": "uvicorn"}}}
+# FIX: use {"query_string": {"query": "log.logger.keyword:uvicorn*"}}. Use *uvicorn* if the text can be in the middle of the value.
+
+# WRONG — a wildcard inside quotes or in a term clause: * is a literal character, so nothing matches
+{"query": {"query_string": {"query": "log.logger.keyword:\"uvicorn*\""}}}
+{"query": {"term": {"log.logger.keyword": "uvicorn*"}}}
+# FIX: write the wildcard in query_string, outside quotes.
 
 # WRONG — filtering on the whole JSON field
 {"query": {"match_phrase": {"log": "timeout"}}}
